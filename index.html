@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+  <title>Sooraj Caterers – Accounts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap"/>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    html,body,#root{height:100%;}
+    body{background:#F0EBE1;overscroll-behavior:none;font-family:'DM Sans',sans-serif;}
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+    input[type=number]{-moz-appearance:textfield;}
+    ::-webkit-scrollbar{width:4px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:#D5CFC5;border-radius:4px;}
+    select{appearance:none;-webkit-appearance:none;}
+    input,select,textarea{font-family:'DM Sans',sans-serif;}
+    @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+    .sk{background:linear-gradient(90deg,#E2D9CE 25%,#EDE6DB 50%,#E2D9CE 75%);background-size:800px 100%;animation:shimmer 1.4s infinite;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ════════════════════════════════════════════════════════
+//  🔥 PASTE YOUR FIREBASE CONFIG HERE
+// ════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "AIzaSyBDAUw6YzOih5JIGPhgGp1Qb_Lpet3OlJ8",
+  authDomain:        "sooraj-caterers.firebaseapp.com",
+  projectId:         "sooraj-caterers",
+  storageBucket:     "sooraj-caterers.firebasestorage.app",
+  messagingSenderId: "1052370335653",
+  appId:             "1:1052370335653:web:6373e663d7ccbd56ce1a4c"
+};
+firebase.initializeApp(firebaseConfig);
+const fsdb        = firebase.firestore();
+const DB_ROOT     = fsdb.collection("sooraj-caterers").doc("main");
+const EVENTS_COL  = DB_ROOT.collection("events");
+const INCOME_COL  = DB_ROOT.collection("income");
+const EXPENSES_COL= DB_ROOT.collection("expenses");
+
+const { useState, useEffect, useRef } = React;
+
+function useBreakpoint(){
+  const[w,setW]=useState(window.innerWidth);
+  useEffect(()=>{const fn=()=>setW(window.innerWidth);window.addEventListener("resize",fn);return()=>window.removeEventListener("resize",fn);},[]);
+  if(w>=1280)return"desktop";if(w>=768)return"tablet";return"mobile";
+}
+
+const CHANNELS=[
+  {id:"c1",name:"Dad's Personal Bank",short:"Bank\n(Dad)",  holder:"Dad"},
+  {id:"c2",name:"Company Acc #1",     short:"Co.\nAcc #1",  holder:"Dad"},
+  {id:"c3",name:"Cash in Hand (Dad)", short:"Cash\n(Dad)",  holder:"Dad"},
+  {id:"c4",name:"Company Acc #2",     short:"Co.\nAcc #2",  holder:"Brother"},
+  {id:"c5",name:"Brother's Account",  short:"Bro.\nAcc",    holder:"Brother"},
+];
+const EXP_CHANNELS=[
+  {id:"c0",name:"Cash (General)",     holder:"General"},
+  {id:"c1",name:"Dad's Personal Bank",holder:"Dad"},
+  {id:"c2",name:"Company Acc #1",     holder:"Dad"},
+  {id:"c3",name:"Cash in Hand (Dad)", holder:"Dad"},
+  {id:"c4",name:"Company Acc #2",     holder:"Brother"},
+  {id:"c5",name:"Brother's Account",  holder:"Brother"},
+];
+const ALL_CH=[...EXP_CHANNELS];
+const PAY_TYPES=[
+  {id:"Advance",label:"Advance",  col:"#2E6BB8",bg:"#E6EFFA"},
+  {id:"Partial", label:"Partial", col:"#B56010",bg:"#FAF0E2"},
+  {id:"Final",   label:"Final",   col:"#276749",bg:"#E3F0E8"},
+  {id:"Full",    label:"Full Paid",col:"#276749",bg:"#E3F0E8"},
+];
+const EXP_CATS=["Raw Materials","Labor / Staff","Transport","Rentals","Miscellaneous"];
+const MOS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const TABS=[{id:"income",icon:"💰",label:"Income"},{id:"expenses",icon:"💸",label:"Expenses"},{id:"channels",icon:"🏦",label:"Channels"},{id:"summary",icon:"📊",label:"Summary"}];
+
+const INR  =n=>"₹"+Number(n||0).toLocaleString("en-IN");
+const uid  =()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const today=()=>new Date().toISOString().split("T")[0];
+const fmtDt=s=>{if(!s)return"";const[y,m,d]=s.split("-");return`${d} ${MOS[+m-1]} ${y}`;};
+const fmtMo=s=>{if(!s)return"";const[y,m]=s.split("-");return`${MOS[+m-1]} ${y}`;};
+const isOvd=s=>s&&s<today();
+const pt   =id=>PAY_TYPES.find(p=>p.id===id)||PAY_TYPES[0];
+const gch  =id=>ALL_CH.find(c=>c.id===id)||ALL_CH[0];
+
+function compressImage(file,cb){
+  const r=new FileReader();
+  r.onload=e=>{const img=new Image();img.onload=()=>{const MAX=600,cv=document.createElement("canvas");let w=img.width,h=img.height;if(w>MAX){h=h*MAX/w;w=MAX;}if(h>MAX){w=w*MAX/h;h=MAX;}cv.width=w;cv.height=h;cv.getContext("2d").drawImage(img,0,0,w,h);cb(cv.toDataURL("image/jpeg",0.5));};img.src=e.target.result;};
+  r.readAsDataURL(file);
+}
+
+function getMonthlyData(events,income,expenses){
+  const dates=[...events.flatMap(e=>e.payments.map(p=>p.date)),...income.map(i=>i.date),...expenses.map(e=>e.date)].filter(Boolean);
+  const months=[...new Set(dates.map(d=>d.slice(0,7)))].sort().reverse();
+  return months.map(mo=>{
+    const mIn=[...events.flatMap(e=>e.payments.filter(p=>p.date?.startsWith(mo)).map(p=>p.amount)),...income.filter(i=>i.date?.startsWith(mo)).map(i=>i.amount)].reduce((s,a)=>s+a,0);
+    const mOut=expenses.filter(e=>e.date?.startsWith(mo)).reduce((s,e)=>s+e.amount,0);
+    return{mo,label:fmtMo(mo),mIn,mOut,net:mIn-mOut};
+  });
+}
+
+function exportReport(mode,events,income,expenses){
+  const d=new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"});
+  const evtRec=events.reduce((s,e)=>s+e.payments.reduce((p,r)=>p+r.amount,0),0);
+  const logRec=income.reduce((s,i)=>s+i.amount,0);
+  const billed=events.reduce((s,e)=>s+(e.totalBill||0),0);
+  const totalExp=expenses.reduce((s,e)=>s+e.amount,0);
+  const net=(evtRec+logRec)-totalExp;
+  const outstd=billed-evtRec;
+  const monthly=getMonthlyData(events,income,expenses);
+  const maxMo=Math.max(...monthly.map(m=>Math.max(m.mIn,m.mOut)),1);
+  const css=`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'DM Sans',sans-serif;color:#161616;background:#fff;padding:36px;max-width:820px;margin:0 auto;font-size:13px;}h1{font-family:'Playfair Display',serif;color:#182F24;font-size:26px;margin-bottom:3px;}.sub{color:#B5892A;font-size:10px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;margin-bottom:6px;}.dt{color:#7A7060;font-size:12px;margin-bottom:28px;}.net{background:#182F24;border-radius:10px;padding:20px 24px;margin-bottom:20px;}.nl{font-size:10px;color:rgba(255,255,255,0.5);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;}.nv{font-family:'Playfair Display',serif;font-size:38px;font-weight:700;}.ns{font-size:11px;color:rgba(255,255,255,0.4);margin-top:6px;}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;}.stat{background:#F6F2EA;border-radius:8px;padding:12px 14px;}.sl{font-size:9px;color:#7A7060;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;}.sv{font-size:18px;font-weight:700;}h2{font-family:'Playfair Display',serif;color:#182F24;font-size:17px;margin:24px 0 10px;padding-bottom:6px;border-bottom:1px solid #E2D9CE;}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px;}th{text-align:left;padding:7px 10px;background:#F6F2EA;color:#7A7060;font-size:10px;text-transform:uppercase;letter-spacing:0.4px;font-weight:700;}td{padding:7px 10px;border-bottom:1px solid #F0EBE1;vertical-align:top;}.g{color:#276749;font-weight:700;}.r{color:#A83228;font-weight:700;}.sr td{background:#FAFAF7;padding-left:22px;color:#7A7060;}.mb{display:flex;align-items:center;gap:12px;margin-bottom:10px;padding:10px 12px;background:#F6F2EA;border-radius:6px;}.mbl{font-weight:700;font-size:13px;width:90px;flex-shrink:0;}.mbt{flex:1;background:#E2D9CE;height:6px;border-radius:3px;overflow:hidden;}.mbf{height:100%;border-radius:3px;background:#276749;}@media print{body{padding:16px;}@page{margin:1cm;}}`;
+  let body=`<div class="net"><div class="nl">Net Position</div><div class="nv" style="color:${net>=0?"#6FDDAA":"#FF7B7B"}">${INR(net)}</div><div class="ns">Total income minus all expenses</div></div><div class="grid"><div class="stat"><div class="sl">Total Billed</div><div class="sv">${INR(billed)}</div></div><div class="stat"><div class="sl">Event Payments</div><div class="sv" style="color:#276749">${INR(evtRec)}</div></div><div class="stat"><div class="sl">Quick Log Income</div><div class="sv" style="color:#2E6BB8">${INR(logRec)}</div></div><div class="stat"><div class="sl">Total Expenses</div><div class="sv" style="color:#A83228">${INR(totalExp)}</div></div><div class="stat"><div class="sl">Outstanding</div><div class="sv" style="color:#A83228">${INR(outstd)}</div></div><div class="stat"><div class="sl">Events</div><div class="sv">${events.length}</div></div></div>`;
+  if(monthly.length){body+=`<h2>Monthly Breakdown</h2>`;monthly.forEach(m=>{body+=`<div class="mb"><div class="mbl">${m.label}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span class="g">↑ ${INR(m.mIn)}</span><span class="r">↓ ${INR(m.mOut)}</span></div><div class="mbt"><div class="mbf" style="width:${(m.mIn/maxMo*100).toFixed(0)}%"></div></div></div><div style="font-weight:700;font-size:13px;color:${m.net>=0?"#276749":"#A83228"};width:80px;text-align:right">${INR(m.net)}</div></div>`;});}
+  if(mode==="standard"||mode==="full"){body+=`<h2>Events</h2><table><tr><th>Event</th><th>Customer</th><th>Date</th><th>Bill</th><th>Received</th><th>Due</th></tr>`;events.forEach(e=>{const rec=e.payments.reduce((s,p)=>s+p.amount,0);const due=e.totalBill-rec;body+=`<tr><td><strong>${e.name}</strong></td><td>${e.customer||"—"}</td><td>${fmtDt(e.date)}</td><td>${INR(e.totalBill)}</td><td class="g">${INR(rec)}</td><td class="${due>0?"r":"g"}">${INR(due)}</td></tr>`;if(mode==="full"){e.payments.forEach(p=>{body+=`<tr class="sr"><td>↳ ${pt(p.payType).label}</td><td colspan="2">${gch(p.channel).name} · ${fmtDt(p.date)}</td><td></td><td class="g">${INR(p.amount)}</td><td></td></tr>`;});}});body+=`</table><h2>Expenses</h2><table><tr><th>Category</th><th>Channel</th><th>Date</th><th>Note</th><th>Amount</th></tr>`;expenses.forEach(e=>{body+=`<tr><td>${e.category}</td><td>${gch(e.channel).name}</td><td>${fmtDt(e.date)}</td><td>${e.note||"—"}</td><td class="r">${INR(e.amount)}</td></tr>`;});body+=`</table>`;}
+  if(mode==="full"&&income.length){body+=`<h2>Quick Income Log</h2><table><tr><th>Type</th><th>Channel</th><th>Date</th><th>Note</th><th>Amount</th></tr>`;income.forEach(i=>{body+=`<tr><td>${pt(i.payType).label}</td><td>${gch(i.channel).name}</td><td>${fmtDt(i.date)}</td><td>${i.note||"—"}</td><td class="g">${INR(i.amount)}</td></tr>`;});body+=`</table>`;}
+  const modeLabel=mode==="summary"?"Summary Only":mode==="standard"?"Standard Report":"Full Detail";
+  const win=window.open("","_blank");
+  win.document.write(`<!DOCTYPE html><html><head><title>Sooraj Caterers Report</title><style>${css}</style></head><body><h1>Sooraj Caterers & Events</h1><div class="sub">Account Report · ${modeLabel}</div><div class="dt">Generated ${d}</div>${body}<div style="color:#ccc;font-size:10px;text-align:center;margin-top:32px">Sooraj Caterers & Events – Est. 1989 · Calicut, Kerala</div></body></html>`);
+  win.document.close();setTimeout(()=>win.print(),600);
+}
+
+const C={bg:"#F0EBE1",primary:"#182F24",accent:"#B5892A",accentL:"#F4EDD6",surface:"#FAFAF7",border:"#E2D9CE",text:"#161616",muted:"#7A7060",green:"#276749",red:"#A83228",blue:"#2E6BB8"};
+const fLbl={fontSize:10,fontWeight:700,color:C.muted,display:"block",textTransform:"uppercase",letterSpacing:1,marginBottom:5};
+const inp={width:"100%",padding:"10px 13px",border:`1.5px solid ${C.border}`,borderRadius:9,fontSize:14,color:C.text,boxSizing:"border-box",outline:"none",marginBottom:13,background:C.surface};
+const sel={width:"100%",padding:"10px 13px",border:`1.5px solid ${C.border}`,borderRadius:9,fontSize:14,color:C.text,boxSizing:"border-box",outline:"none",marginBottom:13,background:C.surface};
+const tarea={width:"100%",padding:"10px 13px",border:`1.5px solid ${C.border}`,borderRadius:9,fontSize:14,color:C.text,boxSizing:"border-box",outline:"none",marginBottom:13,background:C.surface,resize:"vertical",minHeight:60};
+const btn={width:"100%",padding:"12px 0",borderRadius:10,border:"none",background:C.primary,color:"#fff",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:8};
+const btnO={width:"100%",padding:"11px 0",borderRadius:10,border:`1.5px solid ${C.border}`,background:"transparent",color:C.text,fontSize:14,fontWeight:600,cursor:"pointer"};
+const pill={display:"inline-flex",alignItems:"center",padding:"2px 9px",borderRadius:20,fontSize:10,fontWeight:700};
+
+function Modal({title,onClose,children,bp}){
+  const isMob=bp==="mobile";
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:400,display:"flex",alignItems:isMob?"flex-end":"center",justifyContent:"center",padding:isMob?0:24}} onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:C.bg,borderRadius:isMob?"18px 18px 0 0":"16px",padding:"20px 22px 28px",width:"100%",maxWidth:isMob?"100%":520,maxHeight:"90vh",overflowY:"auto",position:"relative",boxSizing:"border-box"}}>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:19,fontWeight:700,color:C.text,marginBottom:16,paddingRight:36}}>{title}</div>
+        <button onClick={onClose} style={{position:"absolute",right:16,top:16,background:C.border,border:"none",borderRadius:"50%",width:30,height:30,cursor:"pointer",fontSize:14}}>✕</button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Chips({options,value,onChange,labelKey="label",valueKey="id",colorKey=null,bgKey=null}){
+  return(
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:13}}>
+      {options.map(o=>{const s=value===o[valueKey];return<button key={o[valueKey]} onClick={()=>onChange(o[valueKey])} style={{padding:"6px 13px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:600,whiteSpace:"nowrap",border:`1.5px solid ${s?(colorKey?o[colorKey]:C.primary):C.border}`,background:s?(bgKey?o[bgKey]:C.primary):C.surface,color:s?(colorKey?o[colorKey]:"#fff"):C.muted}}>{o[labelKey]}</button>;})}
+    </div>
+  );
+}
+
+function PBadge({typeId}){const p=pt(typeId);return<span style={{...pill,background:p.bg,color:p.col}}>{p.label}</span>;}
+function CBadge({chanId}){const c=gch(chanId);return<span style={{...pill,background:"#EEEAE3",color:C.primary,fontSize:10}}>{c.name}</span>;}
+
+function ActRow({onEdit,onDelete,confirmId,setConfirmId,myId}){
+  const base={fontSize:12,fontWeight:600,cursor:"pointer",padding:"5px 14px",borderRadius:7,border:"none"};
+  if(confirmId===myId)return(<div style={{display:"flex",gap:8,marginTop:9,paddingTop:9,borderTop:`1px solid ${C.border}`,alignItems:"center"}}><span style={{fontSize:12,color:C.red,fontWeight:600,flex:1}}>Delete this?</span><button onClick={onDelete} style={{...base,background:"#FAEAEA",color:C.red}}>Yes</button><button onClick={()=>setConfirmId(null)} style={{...base,background:C.border,color:C.text}}>No</button></div>);
+  return(<div style={{display:"flex",gap:6,marginTop:9,paddingTop:9,borderTop:`1px solid ${C.border}`}}><button onClick={onEdit} style={{...base,flex:1,background:"#EEEAE3",color:C.text}}>✏️ Edit</button><button onClick={()=>setConfirmId(myId)} style={{...base,flex:1,background:"#FAEAEA",color:C.red}}>🗑️ Delete</button></div>);
+}
+
+function Card({children,style={}}){return<div style={{background:C.surface,borderRadius:13,padding:16,marginBottom:12,border:`1px solid ${C.border}`,...style}}>{children}</div>;}
+
+function DailySummaryBar({events,income,expenses}){
+  const t=today();
+  const todayIn=[...events.flatMap(e=>e.payments.filter(p=>p.date===t).map(p=>p.amount)),...income.filter(i=>i.date===t).map(i=>i.amount)].reduce((s,a)=>s+a,0);
+  const todayOut=expenses.filter(e=>e.date===t).reduce((s,e)=>s+e.amount,0);
+  const net=todayIn-todayOut;
+  return(
+    <div style={{background:C.primary,borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:0}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:9,color:"rgba(246,242,234,0.45)",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>Today</div>
+        <div style={{fontSize:11,color:"rgba(246,242,234,0.35)"}}>{fmtDt(t)}</div>
+      </div>
+      {[{lbl:"In",val:todayIn,co:"#6FDDAA"},{lbl:"Out",val:todayOut,co:"#FF8080"},{lbl:"Net",val:net,co:net>=0?"#6FDDAA":"#FF8080"}].map((it,i)=>(
+        <div key={it.lbl} style={{textAlign:"right",paddingLeft:16,marginLeft:16,borderLeft:i>0?"1px solid rgba(255,255,255,0.08)":"none"}}>
+          <div style={{fontSize:9,color:"rgba(246,242,234,0.4)",fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>{it.lbl}</div>
+          <div style={{fontSize:15,fontWeight:700,color:it.co,fontFamily:"'Playfair Display',serif"}}>{INR(it.val)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EventForm({initial,onSave,onCancel}){
+  const[f,setF]=useState(initial);
+  return(<><label style={fLbl}>Event / Job Name</label><input style={inp} placeholder="e.g. Ahmed Wedding" value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))}/><label style={fLbl}>Customer Name</label><input style={inp} placeholder="Customer" value={f.customer} onChange={e=>setF(p=>({...p,customer:e.target.value}))}/><label style={fLbl}>Event Date</label><input style={inp} type="date" value={f.date} onChange={e=>setF(p=>({...p,date:e.target.value}))}/><label style={fLbl}>Total Bill (₹)</label><input style={inp} type="number" placeholder="0" value={f.totalBill} onChange={e=>setF(p=>({...p,totalBill:e.target.value}))}/><label style={fLbl}>Notes (optional)</label><textarea style={tarea} placeholder="Any notes..." value={f.notes} onChange={e=>setF(p=>({...p,notes:e.target.value}))}/><button style={btn} onClick={()=>f.name.trim()&&f.totalBill&&onSave(f)}>Save</button><button style={btnO} onClick={onCancel}>Cancel</button></>);
+}
+
+function PayForm({initial,onSave,onCancel}){
+  const[f,setF]=useState(initial);
+  return(<><label style={fLbl}>Amount (₹)</label><input style={inp} type="number" placeholder="0" value={f.amount} onChange={e=>setF(p=>({...p,amount:e.target.value}))}/><label style={fLbl}>Payment Type</label><Chips options={PAY_TYPES} value={f.payType} onChange={v=>setF(p=>({...p,payType:v}))} colorKey="col" bgKey="bg"/><label style={fLbl}>Channel Received</label><select style={sel} value={f.channel} onChange={e=>setF(p=>({...p,channel:e.target.value}))}>{CHANNELS.map(c=><option key={c.id} value={c.id}>{c.name} ({c.holder})</option>)}</select><label style={fLbl}>Date</label><input style={inp} type="date" value={f.date} onChange={e=>setF(p=>({...p,date:e.target.value}))}/><label style={fLbl}>Note (optional)</label><input style={inp} placeholder="e.g. Advance before event" value={f.note} onChange={e=>setF(p=>({...p,note:e.target.value}))}/><button style={btn} onClick={()=>f.amount&&onSave(f)}>Save</button><button style={btnO} onClick={onCancel}>Cancel</button></>);
+}
+
+function EventsView({events,onSave,withUndo,bp}){
+  const[view,setView]=useState("list");
+  const[modal,setModal]=useState(null);
+  const[editTarget,setET]=useState(null);
+  const[confirmId,setCId]=useState(null);
+  const[markChan,setMarkChan]=useState("c1");
+  const[search,setSearch]=useState("");
+  const[statusFilter,setStatusFilter]=useState("all");
+  const blankE={name:"",customer:"",date:today(),totalBill:"",notes:""};
+  const blankP={amount:"",channel:"c1",payType:"Advance",date:today(),note:""};
+  const sel=events.find(e=>e.id===view);
+  const addEvent=f=>{onSave([{id:uid(),...f,totalBill:Number(f.totalBill),payments:[]},...events]);setModal(null);};
+  const editEvent=f=>{onSave(events.map(e=>e.id===view?{...e,...f,totalBill:Number(f.totalBill)}:e));setModal(null);};
+  const delEvent=id=>{const prev=events;onSave(events.filter(e=>e.id!==id));setView("list");setCId(null);withUndo("Event deleted.",()=>onSave(prev));};
+  const addPay=f=>{onSave(events.map(e=>e.id===view?{...e,payments:[...e.payments,{id:uid(),...f,amount:Number(f.amount)}]}:e));setModal(null);};
+  const editPay=f=>{onSave(events.map(e=>e.id===view?{...e,payments:e.payments.map(p=>p.id===editTarget.id?{...p,...f,amount:Number(f.amount)}:p)}:e));setModal(null);};
+  const delPay=pid=>{const prev=events;onSave(events.map(e=>e.id===view?{...e,payments:e.payments.filter(p=>p.id!==pid)}:e));setCId(null);withUndo("Payment deleted.",()=>onSave(prev));};
+  const markFullyPaid=()=>{if(!sel)return;const rec=sel.payments.reduce((s,p)=>s+p.amount,0);const due=sel.totalBill-rec;if(due<=0)return;onSave(events.map(e=>e.id===view?{...e,payments:[...e.payments,{id:uid(),amount:due,channel:markChan,payType:"Full",date:today(),note:"Marked as fully paid"}]}:e));setModal(null);};
+  const cols=bp==="desktop"?3:bp==="tablet"?2:1;
+
+  const STATUS_FILTERS=[{id:"all",label:"All"},{id:"unpaid",label:"Unpaid"},{id:"overdue",label:"Overdue"},{id:"paid",label:"Paid"}];
+
+  if(view==="list"){
+    const q=search.toLowerCase();
+    const visibleEvents=events.filter(evt=>{
+      const rec=evt.payments.reduce((s,p)=>s+p.amount,0);const due=evt.totalBill-rec;
+      if(q&&!(evt.name.toLowerCase().includes(q)||( evt.customer||"").toLowerCase().includes(q)))return false;
+      if(statusFilter==="paid"&&due>0)return false;
+      if(statusFilter==="unpaid"&&due<=0)return false;
+      if(statusFilter==="overdue"&&!(isOvd(evt.date)&&due>0))return false;
+      return true;
+    });
+    return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:700}}>Events</div>
+        <button onClick={()=>setModal("addEvent")} style={{background:C.primary,color:"#fff",border:"none",borderRadius:9,padding:"8px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ New Event</button>
+      </div>
+      <input style={{...inp,marginBottom:10}} placeholder="Search by name or customer…" value={search} onChange={e=>setSearch(e.target.value)}/>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+        {STATUS_FILTERS.map(f=>{const a=statusFilter===f.id;return<button key={f.id} onClick={()=>setStatusFilter(f.id)} style={{padding:"5px 13px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:600,border:`1.5px solid ${a?C.primary:C.border}`,background:a?C.primary:C.surface,color:a?"#fff":C.muted}}>{f.label}</button>;})}
+      </div>
+      {visibleEvents.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:C.muted}}><div style={{fontSize:40,marginBottom:10}}>📋</div><div style={{fontSize:14}}>{events.length===0?"No events yet.":"No events match your filter."}</div></div>}
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>
+        {visibleEvents.map(evt=>{
+          const rec=evt.payments.reduce((s,p)=>s+p.amount,0);const due=evt.totalBill-rec;const pct=evt.totalBill?Math.min(100,(rec/evt.totalBill)*100):0;const ovd=isOvd(evt.date)&&due>0;
+          return(
+            <Card key={evt.id} style={{cursor:"pointer",marginBottom:0}}>
+              <div onClick={()=>setView(evt.id)}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                  <div style={{fontFamily:"'Playfair Display',serif",fontSize:15,fontWeight:700,flex:1,lineHeight:1.3}}>{evt.name}</div>
+                  {ovd&&<span style={{...pill,background:"#FAEAEA",color:C.red,fontSize:9,marginLeft:6,flexShrink:0}}>OVERDUE</span>}
+                </div>
+                <div style={{fontSize:11,color:C.muted,marginBottom:12}}>{evt.customer} · {fmtDt(evt.date)}</div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <div><div style={{fontSize:10,color:C.muted,fontWeight:600}}>BILL</div><div style={{fontSize:16,fontWeight:700}}>{INR(evt.totalBill)}</div></div>
+                  <div style={{textAlign:"right"}}><div style={{fontSize:10,color:C.muted,fontWeight:600}}>DUE</div><div style={{fontSize:16,fontWeight:700,color:due>0?C.red:C.green}}>{INR(due)}</div></div>
+                </div>
+                <div style={{height:5,borderRadius:3,background:C.border,overflow:"hidden",margin:"6px 0 4px"}}><div style={{height:"100%",borderRadius:3,background:C.green,width:`${pct}%`}}/></div>
+                <div style={{fontSize:11,color:C.muted}}>{INR(rec)} received · {pct.toFixed(0)}%</div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+      {modal==="addEvent"&&<Modal title="New Event" bp={bp} onClose={()=>setModal(null)}><EventForm initial={blankE} onSave={addEvent} onCancel={()=>setModal(null)}/></Modal>}
+    </div>
+  );
+  }
+
+  if(!sel)return null;
+  const rec=sel.payments.reduce((s,p)=>s+p.amount,0);
+  const due=sel.totalBill-rec;const pct=sel.totalBill?Math.min(100,(rec/sel.totalBill)*100):0;const ovd=isOvd(sel.date)&&due>0;
+
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+        <button onClick={()=>{setView("list");setCId(null);}} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:"pointer",color:C.text}}>← Back</button>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700}}>{sel.name}</span>
+            {ovd&&<span style={{...pill,background:"#FAEAEA",color:C.red,fontSize:9}}>OVERDUE</span>}
+          </div>
+          <div style={{fontSize:12,color:C.muted}}>{sel.customer} · {fmtDt(sel.date)}</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{
+            const msg=`*${sel.name}*\n${sel.customer?`Customer: ${sel.customer}\n`:""}Date: ${fmtDt(sel.date)}\n\nTotal Bill: ${INR(sel.totalBill)}\nReceived: ${INR(rec)}\nOutstanding: ${INR(due)}\n${due<=0?"✅ Fully paid":"⏳ Payment pending"}`;
+            navigator.clipboard.writeText(msg).catch(()=>{});
+            const wa=`https://wa.me/?text=${encodeURIComponent(msg)}`;
+            window.open(wa,"_blank");
+          }} style={{background:"#E6F3EC",border:"none",borderRadius:8,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer",color:C.green}} title="Share on WhatsApp">📲</button>
+          <button onClick={()=>{setET(sel);setModal("editEvent");}} style={{background:C.accentL,border:"none",borderRadius:8,padding:"7px 16px",fontSize:13,fontWeight:600,cursor:"pointer",color:C.accent}}>✏️ Edit</button>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:bp==="mobile"?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:14}}>
+        {[{lbl:"Total Bill",val:INR(sel.totalBill),bg:"#EEF5F0",co:C.text},{lbl:"Received",val:INR(rec),bg:"#E6F3EC",co:C.green},{lbl:"Outstanding",val:INR(due),bg:due>0?"#FAEAEA":"#E6F3EC",co:due>0?C.red:C.green},{lbl:"Payments",val:sel.payments.length+" entries",bg:C.accentL,co:C.accent}].map(it=>(
+          <div key={it.lbl} style={{background:it.bg,borderRadius:10,padding:"10px 12px"}}>
+            <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{it.lbl}</div>
+            <div style={{fontSize:15,fontWeight:700,color:it.co}}>{it.val}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{height:5,borderRadius:3,background:C.border,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",borderRadius:3,background:C.green,width:`${pct}%`}}/></div>
+      <div style={{fontSize:11,color:C.muted,marginBottom:14}}>{pct.toFixed(0)}% collected</div>
+
+      {due>0&&<button onClick={()=>setModal("markPaid")} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:"#E6F3EC",color:C.green,fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:14}}>✅ Mark as Fully Paid — {INR(due)} remaining</button>}
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:17,fontWeight:700}}>Payments</div>
+        <button onClick={()=>setModal("addPay")} style={{background:C.primary,color:"#fff",border:"none",borderRadius:8,padding:"7px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>+ Add</button>
+      </div>
+      {sel.payments.length===0&&<div style={{textAlign:"center",padding:"20px",color:C.muted,fontSize:13}}>No payments yet.</div>}
+      <div style={{display:"grid",gridTemplateColumns:bp==="desktop"?"1fr 1fr 1fr":bp==="tablet"?"1fr 1fr":"1fr",gap:10}}>
+        {sel.payments.map(p=>(
+          <Card key={p.id} style={{marginBottom:0}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}><PBadge typeId={p.payType}/><CBadge chanId={p.channel}/></div>
+            <div style={{fontWeight:700,fontSize:18,color:C.green}}>{INR(p.amount)}</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:2}}>{fmtDt(p.date)}</div>
+            {p.note&&<div style={{fontSize:12,color:C.text,marginTop:3}}>{p.note}</div>}
+            <ActRow onEdit={()=>{setET(p);setModal("editPay");}} onDelete={()=>delPay(p.id)} confirmId={confirmId} setConfirmId={setCId} myId={p.id}/>
+          </Card>
+        ))}
+      </div>
+      <div style={{marginTop:16}}>
+        <ActRow onEdit={()=>{setET(sel);setModal("editEvent");}} onDelete={()=>delEvent(sel.id)} confirmId={confirmId} setConfirmId={setCId} myId={"evt_"+sel.id}/>
+        <div style={{fontSize:11,color:C.muted,textAlign:"center",marginTop:5}}>↑ Edit or delete this entire event</div>
+      </div>
+
+      {modal==="addEvent"  &&<Modal title="New Event"    bp={bp} onClose={()=>setModal(null)}><EventForm initial={blankE} onSave={addEvent} onCancel={()=>setModal(null)}/></Modal>}
+      {modal==="editEvent" &&<Modal title="Edit Event"   bp={bp} onClose={()=>setModal(null)}><EventForm initial={{...editTarget,totalBill:String(editTarget.totalBill)}} onSave={editEvent} onCancel={()=>setModal(null)}/></Modal>}
+      {modal==="addPay"    &&<Modal title="Add Payment"  bp={bp} onClose={()=>setModal(null)}><PayForm initial={blankP} onSave={addPay} onCancel={()=>setModal(null)}/></Modal>}
+      {modal==="editPay"   &&<Modal title="Edit Payment" bp={bp} onClose={()=>setModal(null)}><PayForm initial={{...editTarget,amount:String(editTarget.amount)}} onSave={editPay} onCancel={()=>setModal(null)}/></Modal>}
+      {modal==="markPaid"&&(
+        <Modal title="Mark as Fully Paid" bp={bp} onClose={()=>setModal(null)}>
+          <div style={{background:"#E6F3EC",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+            <div style={{fontSize:12,color:C.muted}}>Remaining balance</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:30,fontWeight:700,color:C.green}}>{INR(due)}</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:3}}>Will be logged as Full Payment with today's date</div>
+          </div>
+          <label style={fLbl}>Which channel received this?</label>
+          <select style={sel} value={markChan} onChange={e=>setMarkChan(e.target.value)}>
+            {CHANNELS.map(c=><option key={c.id} value={c.id}>{c.name} ({c.holder})</option>)}
+          </select>
+          <button style={{...btn,background:C.green}} onClick={markFullyPaid}>✅ Confirm Full Payment</button>
+          <button style={btnO} onClick={()=>setModal(null)}>Cancel</button>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function LogForm({initial,onSave,onCancel,events}){
+  const[f,setF]=useState(initial);
+  return(<><label style={fLbl}>Amount (₹)</label><input style={{...inp,fontSize:20,fontWeight:700}} type="number" placeholder="0" value={f.amount} onChange={e=>setF(p=>({...p,amount:e.target.value}))}/><label style={fLbl}>Payment Type</label><Chips options={PAY_TYPES} value={f.payType} onChange={v=>setF(p=>({...p,payType:v}))} colorKey="col" bgKey="bg"/><label style={fLbl}>Channel Received</label><div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:13}}>{CHANNELS.map(c=>{const s=f.channel===c.id;return<button key={c.id} onClick={()=>setF(p=>({...p,channel:c.id}))} style={{padding:"7px 4px",borderRadius:9,border:`1.5px solid ${s?C.primary:C.border}`,background:s?C.primary:C.surface,color:s?"#fff":C.muted,fontSize:10,fontWeight:600,cursor:"pointer",lineHeight:1.4,textAlign:"center",whiteSpace:"pre-line"}}>{c.short}</button>; })}</div><label style={fLbl}>Date</label><input style={inp} type="date" value={f.date} onChange={e=>setF(p=>({...p,date:e.target.value}))}/><label style={fLbl}>Link to Event (optional)</label><select style={sel} value={f.eventId} onChange={e=>setF(p=>({...p,eventId:e.target.value}))}><option value="">— Not linked —</option>{(events||[]).map(e=><option key={e.id} value={e.id}>{e.name} ({e.customer})</option>)}</select><label style={fLbl}>Note (optional)</label><input style={inp} placeholder="e.g. Cash from Dad" value={f.note} onChange={e=>setF(p=>({...p,note:e.target.value}))}/><button style={btn} onClick={()=>f.amount&&onSave(f)}>Save</button><button style={btnO} onClick={onCancel}>Cancel</button></>);
+}
+
+function QuickLogView({income,events,onSave,withUndo,bp}){
+  const blankQ={amount:"",channel:"c3",payType:"Advance",date:today(),eventId:"",note:""};
+  const[form,setForm]=useState(blankQ);
+  const[modal,setModal]=useState(null);
+  const[editTarget,setET]=useState(null);
+  const[confirmId,setCId]=useState(null);
+  const[srch,setSrch]=useState("");
+  const save=()=>{if(!form.amount)return;onSave([{id:uid(),...form,amount:Number(form.amount)},...income]);setForm(blankQ);};
+  const saveEdit=f=>{onSave(income.map(i=>i.id===editTarget.id?{...i,...f,amount:Number(f.amount)}:i));setModal(null);};
+  const del=id=>{const prev=income;onSave(income.filter(i=>i.id!==id));setCId(null);withUndo("Income entry deleted.",()=>onSave(prev));};
+  const total=income.reduce((s,i)=>s+i.amount,0);
+
+  const entryForm=(
+    <Card style={{border:`1.5px solid ${C.primary}`,marginBottom:bp==="mobile"?14:0}}>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:16,fontWeight:700,marginBottom:12}}>Record Money Received</div>
+      <label style={fLbl}>Amount (₹)</label>
+      <input style={{...inp,fontSize:22,fontWeight:700}} type="number" placeholder="0" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
+      <label style={fLbl}>Payment Type</label>
+      <Chips options={PAY_TYPES} value={form.payType} onChange={v=>setForm(f=>({...f,payType:v}))} colorKey="col" bgKey="bg"/>
+      <label style={fLbl}>Received Via</label>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:13}}>
+        {CHANNELS.map(c=>{const s=form.channel===c.id;return<button key={c.id} onClick={()=>setForm(f=>({...f,channel:c.id}))} style={{padding:"7px 4px",borderRadius:9,border:`1.5px solid ${s?C.primary:C.border}`,background:s?C.primary:C.surface,color:s?"#fff":C.muted,fontSize:10,fontWeight:600,cursor:"pointer",lineHeight:1.4,textAlign:"center",whiteSpace:"pre-line"}}>{c.short}</button>;})}
+      </div>
+      <label style={fLbl}>Date</label>
+      <input style={inp} type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/>
+      <label style={fLbl}>Link to Event (optional)</label>
+      <select style={sel} value={form.eventId} onChange={e=>setForm(f=>({...f,eventId:e.target.value}))}>
+        <option value="">— Not linked —</option>
+        {events.map(e=><option key={e.id} value={e.id}>{e.name} ({e.customer})</option>)}
+      </select>
+      <label style={fLbl}>Note (optional)</label>
+      <input style={inp} placeholder="e.g. Cash from Dad" value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/>
+      <button style={btn} onClick={save}>Save Entry</button>
+    </Card>
+  );
+
+  const visIncome=srch?income.filter(x=>{const q=srch.toLowerCase();return(x.note||"").toLowerCase().includes(q)||gch(x.channel).name.toLowerCase().includes(q)||x.payType.toLowerCase().includes(q);}):income;
+  const logList=(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:bp==="mobile"?17:22,fontWeight:700}}>Income Log</div>
+        <span style={{fontSize:13,color:C.muted,fontWeight:600}}>{INR(total)} total</span>
+      </div>
+      <input style={{...inp,marginBottom:10}} placeholder="Search by note, channel or type…" value={srch} onChange={e=>setSrch(e.target.value)}/>
+      {income.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:C.muted}}><div style={{fontSize:36,marginBottom:8}}>⚡</div><div style={{fontSize:13}}>No entries yet.</div></div>}
+      {visIncome.length===0&&income.length>0&&<div style={{textAlign:"center",padding:"40px 0",color:C.muted}}><div style={{fontSize:36,marginBottom:8}}>🔍</div><div style={{fontSize:13}}>No entries match your search.</div></div>}
+      <div style={{display:"grid",gridTemplateColumns:bp==="desktop"?"1fr 1fr 1fr":bp==="tablet"?"1fr 1fr":"1fr",gap:10}}>
+        {visIncome.map(entry=>{
+          const evt=events.find(e=>e.id===entry.eventId);
+          return(
+            <Card key={entry.id} style={{marginBottom:0}}>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}><PBadge typeId={entry.payType}/><CBadge chanId={entry.channel}/>{evt&&<span style={{...pill,background:"#EDF4EC",color:C.green}}>{evt.name}</span>}</div>
+              <div style={{fontWeight:700,fontSize:18,color:C.green}}>{INR(entry.amount)}</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:2}}>{fmtDt(entry.date)}</div>
+              {entry.note&&<div style={{fontSize:12,color:C.text,marginTop:3}}>{entry.note}</div>}
+              <ActRow onEdit={()=>{setET(entry);setModal("edit");}} onDelete={()=>del(entry.id)} confirmId={confirmId} setConfirmId={setCId} myId={entry.id}/>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return(
+    <div>
+      {bp!=="mobile"?<div style={{display:"grid",gridTemplateColumns:"340px 1fr",gap:20,alignItems:"start"}}>{entryForm}{logList}</div>:<>{entryForm}{logList}</>}
+      {modal==="edit"&&<Modal title="Edit Entry" bp={bp} onClose={()=>setModal(null)}><LogForm initial={{...editTarget,amount:String(editTarget.amount)}} onSave={saveEdit} onCancel={()=>setModal(null)} events={events}/></Modal>}
+    </div>
+  );
+}
+
+function IncomeTab({events,income,onSaveEvents,onSaveIncome,withUndo,bp}){
+  const[sub,setSub]=useState("events");
+  return(
+    <div>
+      <div style={{display:"flex",background:C.border,borderRadius:11,padding:3,marginBottom:18,maxWidth:320}}>
+        {[{id:"events",label:"📋 By Event"},{id:"log",label:"⚡ Quick Log"}].map(t=>(
+          <button key={t.id} onClick={()=>setSub(t.id)} style={{flex:1,padding:"8px 0",border:"none",borderRadius:9,fontSize:13,fontWeight:600,cursor:"pointer",background:sub===t.id?C.surface:"transparent",color:sub===t.id?C.primary:C.muted,boxShadow:sub===t.id?"0 1px 4px rgba(0,0,0,0.1)":"none"}}>{t.label}</button>
+        ))}
+      </div>
+      {sub==="events"?<EventsView events={events} onSave={onSaveEvents} withUndo={withUndo} bp={bp}/>:<QuickLogView income={income} events={events} onSave={onSaveIncome} withUndo={withUndo} bp={bp}/>}
+    </div>
+  );
+}
+
+function ExpensesTab({expenses,events,onSave,withUndo,bp,addTrigger}){
+  const[modal,setModal]=useState(null);
+  const[editTarget,setET]=useState(null);
+  const[confirmId,setCId]=useState(null);
+  const[viewPhoto,setViewPhoto]=useState(null);
+  const[search,setSearch]=useState("");
+  const isFT=useRef(true);
+  useEffect(()=>{if(isFT.current){isFT.current=false;return;}setModal("add");},[addTrigger]);
+  const blankX={amount:"",category:EXP_CATS[0],channel:"c0",eventId:"",date:today(),note:"",photo:"",recurring:false};
+  const add=f=>{if(!f.amount)return;onSave([{id:uid(),...f,amount:Number(f.amount)},...expenses]);setModal(null);};
+  const saveEd=f=>{if(!f.amount)return;onSave(expenses.map(e=>e.id===editTarget.id?{...e,...f,amount:Number(f.amount)}:e));setModal(null);};
+  const del=id=>{
+    const prev=expenses;
+    const exp=expenses.find(e=>e.id===id);
+    onSave(expenses.filter(e=>e.id!==id));setCId(null);
+    withUndo("Expense deleted.",()=>onSave(prev));
+  };
+  const catTotals=EXP_CATS.reduce((acc,cat)=>{acc[cat]=expenses.filter(e=>e.category===cat).reduce((s,e)=>s+e.amount,0);return acc;},{});
+
+  function ExpForm({initial,onSave,onCancel}){
+    const[f,setF]=useState(initial);
+    const[noteErr,setNoteErr]=useState(false);
+    const handleSave=()=>{if(!f.amount)return;if(f.channel==="c0"&&!f.note.trim()){setNoteErr(true);return;}setNoteErr(false);onSave(f);};
+    const handlePhoto=e=>{const file=e.target.files[0];if(!file)return;compressImage(file,b64=>setF(p=>({...p,photo:b64})));};
+    return(
+      <>
+        <label style={fLbl}>Amount (₹)</label>
+        <input style={inp} autoFocus type="number" placeholder="0" value={f.amount} onChange={e=>setF(p=>({...p,amount:e.target.value}))}/>
+        <label style={fLbl}>Category</label>
+        <select style={sel} value={f.category} onChange={e=>setF(p=>({...p,category:e.target.value}))}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select>
+        <label style={fLbl}>Paid From Channel</label>
+        <select style={{...sel,borderColor:f.channel==="c0"?C.accent:C.border}} value={f.channel} onChange={e=>setF(p=>({...p,channel:e.target.value}))}>
+          {EXP_CHANNELS.map(c=><option key={c.id} value={c.id}>{c.name}{c.holder!=="General"?` (${c.holder})`:""}</option>)}
+        </select>
+        <label style={{...fLbl,color:noteErr?C.red:f.channel==="c0"?C.accent:C.muted}}>
+          {f.channel==="c0"?"Note — required for Cash (what was this for?)":"Note (optional)"}
+        </label>
+        <input style={{...inp,borderColor:noteErr?C.red:f.channel==="c0"?C.accent:C.border}} placeholder={f.channel==="c0"?"e.g. Vegetables for Ahmed wedding":"e.g. Chicken from supplier"} value={f.note} onChange={e=>{setF(p=>({...p,note:e.target.value}));if(noteErr)setNoteErr(false);}}/>
+        {noteErr&&<div style={{fontSize:11,color:C.red,marginTop:-10,marginBottom:10,fontWeight:600}}>⚠ Please describe what this cash was spent on.</div>}
+        <label style={fLbl}>Linked Event (optional)</label>
+        <select style={sel} value={f.eventId} onChange={e=>setF(p=>({...p,eventId:e.target.value}))}><option value="">— General expense —</option>{events.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>
+        <label style={fLbl}>Date</label>
+        <input style={inp} type="date" value={f.date} onChange={e=>setF(p=>({...p,date:e.target.value}))}/>
+        <label style={fLbl}>Attach Receipt Photo (optional)</label>
+        <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{marginBottom:13,fontSize:13,color:C.text,width:"100%"}}/>
+        {f.photo&&<img src={f.photo} style={{width:"100%",borderRadius:8,marginBottom:13,maxHeight:160,objectFit:"cover"}} alt="receipt"/>}
+        <div style={{display:"flex",alignItems:"center",gap:10,background:C.accentL,borderRadius:9,padding:"10px 13px",marginBottom:13,cursor:"pointer"}} onClick={()=>setF(p=>({...p,recurring:!p.recurring}))}>
+          <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${C.accent}`,background:f.recurring?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            {f.recurring&&<span style={{color:"#fff",fontSize:13,fontWeight:900}}>✓</span>}
+          </div>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:C.text}}>Repeat monthly</div>
+            <div style={{fontSize:11,color:C.muted}}>Get a reminder to log this expense each month</div>
+          </div>
+        </div>
+        <button style={btn} onClick={handleSave}>Save</button>
+        <button style={btnO} onClick={onCancel}>Cancel</button>
+      </>
+    );
+  }
+
+  const summary=(
+    <div style={{background:C.primary,borderRadius:13,padding:18,marginBottom:bp==="mobile"?14:0}}>
+      <div style={{color:C.accent,fontSize:10,fontWeight:700,letterSpacing:1.4,textTransform:"uppercase",marginBottom:12}}>By Category</div>
+      {EXP_CATS.map(cat=>(
+        <div key={cat} style={{display:"flex",justifyContent:"space-between",marginBottom:9}}>
+          <span style={{fontSize:13,color:"rgba(246,242,234,0.7)"}}>{cat}</span>
+          <span style={{fontSize:13,fontWeight:700,color:"#F6F2EA"}}>{INR(catTotals[cat])}</span>
+        </div>
+      ))}
+      <div style={{borderTop:"1px solid rgba(255,255,255,0.12)",marginTop:10,paddingTop:10,display:"flex",justifyContent:"space-between"}}>
+        <span style={{fontSize:13,fontWeight:700,color:C.accent}}>Total</span>
+        <span style={{fontSize:17,fontWeight:700,color:"#F6F2EA"}}>{INR(expenses.reduce((s,e)=>s+e.amount,0))}</span>
+      </div>
+    </div>
+  );
+
+  const thisMo=today().slice(0,7);
+  const recurringTemplates=expenses.filter(e=>e.recurring);
+  const missingRecurring=recurringTemplates.filter(tmpl=>!expenses.some(e=>e.id!==tmpl.id&&e.category===tmpl.category&&e.channel===tmpl.channel&&e.amount===tmpl.amount&&e.date?.startsWith(thisMo)));
+  const logAllRecurring=()=>{
+    const newOnes=missingRecurring.map(tmpl=>({...tmpl,id:uid(),date:today(),recurring:false,photo:"",photoPath:""}));
+    onSave([...newOnes,...expenses]);
+  };
+
+  const visExpenses=search?expenses.filter(x=>{const q=search.toLowerCase();return(x.note||"").toLowerCase().includes(q)||x.category.toLowerCase().includes(q)||gch(x.channel).name.toLowerCase().includes(q);}):expenses;
+  const list=(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:bp==="mobile"?17:22,fontWeight:700}}>All Expenses</div>
+        <button onClick={()=>setModal("add")} style={{background:C.primary,color:"#fff",border:"none",borderRadius:9,padding:"8px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Add</button>
+      </div>
+      <input style={{...inp,marginBottom:10}} placeholder="Search by note, category or channel…" value={search} onChange={e=>setSearch(e.target.value)}/>
+      {missingRecurring.length>0&&(
+        <div style={{background:C.accentL,borderRadius:10,padding:"12px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:C.text}}>🔁 {missingRecurring.length} recurring expense{missingRecurring.length>1?"s":""} not yet logged this month</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:2}}>{missingRecurring.map(e=>e.note||e.category).join(", ")}</div>
+          </div>
+          <button onClick={logAllRecurring} style={{background:C.accent,color:C.primary,border:"none",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>Log All</button>
+        </div>
+      )}
+      {expenses.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:C.muted}}><div style={{fontSize:36,marginBottom:8}}>💸</div><div style={{fontSize:13}}>No expenses yet.</div></div>}
+      {visExpenses.length===0&&expenses.length>0&&<div style={{textAlign:"center",padding:"40px 0",color:C.muted}}><div style={{fontSize:36,marginBottom:8}}>🔍</div><div style={{fontSize:13}}>No expenses match your search.</div></div>}
+      <div style={{display:"grid",gridTemplateColumns:bp==="desktop"?"1fr 1fr 1fr":bp==="tablet"?"1fr 1fr":"1fr",gap:10}}>
+        {visExpenses.map(exp=>{
+          const chn=gch(exp.channel);const evt=events.find(e=>e.id===exp.eventId);
+          return(
+            <Card key={exp.id} style={{marginBottom:0}}>
+              {exp.photo&&<img src={exp.photo} onClick={()=>setViewPhoto(exp.photo)} style={{width:"100%",borderRadius:8,marginBottom:10,maxHeight:110,objectFit:"cover",cursor:"pointer"}} alt="receipt"/>}
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+                <span style={{...pill,background:C.accentL,color:C.accent}}>{exp.category}</span>
+                {exp.recurring&&<span style={{...pill,background:"#E8F0FA",color:C.blue,fontSize:9}}>🔁 RECURRING</span>}
+                {exp.channel==="c0"&&<span style={{...pill,background:"#FFF3E0",color:"#E65100",fontSize:9}}>CASH</span>}
+                {evt&&<span style={{...pill,background:"#EDF4EC",color:C.green}}>{evt.name}</span>}
+              </div>
+              <div style={{fontWeight:700,fontSize:18,color:C.red}}>{INR(exp.amount)}</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:2}}>{fmtDt(exp.date)} · {chn.name}</div>
+              {exp.note&&<div style={{fontSize:12,color:C.text,marginTop:3}}>{exp.note}</div>}
+              <ActRow onEdit={()=>{setET(exp);setModal("edit");}} onDelete={()=>del(exp.id)} confirmId={confirmId} setConfirmId={setCId} myId={exp.id}/>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return(
+    <div>
+      {bp==="mobile"?<>{summary}{list}</>:<div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:20,alignItems:"start"}}>{summary}{list}</div>}
+      {modal==="add"  &&<Modal title="Add Expense"  bp={bp} onClose={()=>setModal(null)}><ExpForm initial={blankX} onSave={add} onCancel={()=>setModal(null)}/></Modal>}
+      {modal==="edit" &&<Modal title="Edit Expense" bp={bp} onClose={()=>setModal(null)}><ExpForm initial={{...editTarget,amount:String(editTarget.amount)}} onSave={saveEd} onCancel={()=>setModal(null)}/></Modal>}
+      {viewPhoto&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setViewPhoto(null)}><img src={viewPhoto} style={{maxWidth:"100%",maxHeight:"90vh",borderRadius:10,objectFit:"contain"}} alt="receipt"/></div>}
+    </div>
+  );
+}
+
+function ChannelsTab({events,income,expenses,bp}){
+  const allPays=[...events.flatMap(e=>e.payments.map(p=>({...p,label:e.name}))),...income.map(i=>({...i,label:events.find(e=>e.id===i.eventId)?.name||i.note||"Quick entry"}))];
+  const cashGenExp=expenses.filter(e=>e.channel==="c0").reduce((s,e)=>s+e.amount,0);
+  const cashGenRecent=expenses.filter(e=>e.channel==="c0").slice(-3).reverse();
+  const cols=bp==="desktop"?3:bp==="tablet"?2:1;
+  return(
+    <div>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:700,marginBottom:18}}>Payment Channels</div>
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12}}>
+        <Card style={{marginBottom:0}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+            <div><div style={{fontWeight:700,fontSize:14}}>Cash (General)</div><div style={{fontSize:11,color:C.muted}}>Unattributed cash</div></div>
+            <span style={{...pill,background:"#FAEAEA",color:C.red,fontSize:13,padding:"4px 12px"}}>{INR(cashGenExp)}</span>
+          </div>
+          <div style={{background:"#FAEAEA",borderRadius:8,padding:"10px 12px",marginBottom:cashGenRecent.length?10:0}}>
+            <div style={{fontSize:10,color:C.muted,fontWeight:600}}>TOTAL SPENT</div>
+            <div style={{fontWeight:700,color:C.red,fontSize:15,marginTop:2}}>{INR(cashGenExp)}</div>
+          </div>
+          {cashGenRecent.map(e=>(<div key={e.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,borderTop:`1px solid ${C.border}`,padding:"5px 0"}}><span style={{color:C.muted,flex:1,marginRight:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.note||e.category}</span><span style={{fontWeight:700,color:C.red}}>{INR(e.amount)}</span></div>))}
+        </Card>
+        {CHANNELS.map(chn=>{
+          const rec=allPays.filter(p=>p.channel===chn.id).reduce((s,p)=>s+p.amount,0);
+          const paid=expenses.filter(e=>e.channel===chn.id).reduce((s,e)=>s+e.amount,0);
+          const recent=allPays.filter(p=>p.channel===chn.id).slice(-3).reverse();
+          return(
+            <Card key={chn.id} style={{marginBottom:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div><div style={{fontWeight:700,fontSize:14}}>{chn.name}</div><div style={{fontSize:11,color:C.muted}}>{chn.holder}</div></div>
+                <span style={{...pill,background:C.primary,color:"#F6F2EA",fontSize:13,padding:"4px 12px"}}>{INR(rec-paid)}</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:recent.length?10:0}}>
+                <div style={{background:"#E6F3EC",borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:10,color:C.muted,fontWeight:600}}>RECEIVED</div><div style={{fontWeight:700,color:C.green,fontSize:14,marginTop:2}}>{INR(rec)}</div></div>
+                <div style={{background:"#FAEAEA",borderRadius:8,padding:"9px 10px"}}><div style={{fontSize:10,color:C.muted,fontWeight:600}}>PAID OUT</div><div style={{fontWeight:700,color:C.red,fontSize:14,marginTop:2}}>{INR(paid)}</div></div>
+              </div>
+              {recent.map(p=>(<div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,borderTop:`1px solid ${C.border}`,padding:"5px 0"}}><span style={{color:C.muted,flex:1,marginRight:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.label}</span><span style={{fontWeight:700,color:C.green}}>{INR(p.amount)}</span></div>))}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SummaryTab({events,income,expenses,bp}){
+  const[copied,setCopied]=useState(false);
+  const[exportModal,setExportModal]=useState(false);
+  const[rangeFilter,setRangeFilter]=useState("all");
+
+  const RANGE_OPTS=[{id:"all",label:"All Time"},{id:"month",label:"This Month"},{id:"q3",label:"Last 3 Mo."},{id:"year",label:"This Year"}];
+  const cutoff=(()=>{const now=new Date();if(rangeFilter==="month")return new Date(now.getFullYear(),now.getMonth(),1).toISOString().split("T")[0];if(rangeFilter==="q3"){const d=new Date(now);d.setMonth(d.getMonth()-3);return d.toISOString().split("T")[0];}if(rangeFilter==="year")return`${now.getFullYear()}-01-01`;return null;})();
+  const inRange=date=>!cutoff||(date&&date>=cutoff);
+
+  const rEvents=events.map(e=>({...e,payments:e.payments.filter(p=>inRange(p.date))}));
+  const rIncome=income.filter(i=>inRange(i.date));
+  const rExpenses=expenses.filter(e=>inRange(e.date));
+
+  const evtRec=rEvents.reduce((s,e)=>s+e.payments.reduce((p,r)=>p+r.amount,0),0);
+  const logRec=rIncome.reduce((s,i)=>s+i.amount,0);
+  const billed=events.reduce((s,e)=>s+(e.totalBill||0),0);
+  const allEvtRec=events.reduce((s,e)=>s+e.payments.reduce((p,r)=>p+r.amount,0),0);
+  const totalExp=rExpenses.reduce((s,e)=>s+e.amount,0);
+  const outstd=billed-allEvtRec;
+  const net=(evtRec+logRec)-totalExp;
+  const rate=billed?((allEvtRec/billed)*100).toFixed(0):0;
+  const unpaid=events.filter(e=>{const r=e.payments.reduce((s,p)=>s+p.amount,0);return r<e.totalBill;});
+  const monthly=getMonthlyData(rEvents,rIncome,rExpenses);
+  const maxMo=Math.max(...monthly.map(m=>Math.max(m.mIn,m.mOut)),1);
+  const copyWA=()=>{const d=new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});let t=`*Sooraj Caterers & Events*\n📊 Account Summary – ${d}\n\nTotal Billed: ${INR(billed)}\nCollected (Events): ${INR(evtRec)} (${rate}%)\nQuick Log Income: ${INR(logRec)}\nOutstanding: ${INR(outstd)}\nTotal Expenses: ${INR(totalExp)}\n*Net Position: ${INR(net)}*\n`;if(unpaid.length){t+=`\n📌 Pending:\n`;unpaid.forEach(e=>{const r=e.payments.reduce((s,p)=>s+p.amount,0);t+=`• ${e.name} (${e.customer}) – ${INR(e.totalBill-r)} due\n`;});}navigator.clipboard.writeText(t).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);}).catch(()=>{});};
+  const cols=bp==="desktop"?4:2;
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:700}}>Summary</div>
+        <button onClick={()=>setExportModal(true)} style={{background:C.accent,color:C.primary,border:"none",borderRadius:9,padding:"8px 18px",fontSize:13,fontWeight:700,cursor:"pointer"}}>📄 Export</button>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+        {RANGE_OPTS.map(r=>{const a=rangeFilter===r.id;return<button key={r.id} onClick={()=>setRangeFilter(r.id)} style={{padding:"5px 13px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:600,border:`1.5px solid ${a?C.primary:C.border}`,background:a?C.primary:C.surface,color:a?"#fff":C.muted}}>{r.label}</button>;})}
+      </div>
+
+      <div style={{background:C.primary,borderRadius:14,padding:"22px 24px",marginBottom:14}}>
+        <div style={{color:C.accent,fontSize:10,fontWeight:700,letterSpacing:1.4,textTransform:"uppercase",marginBottom:6}}>Net Position</div>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:bp==="mobile"?36:48,fontWeight:700,color:net>=0?"#6FDDAA":"#FF7B7B",lineHeight:1}}>{INR(net)}</div>
+        <div style={{fontSize:12,color:"rgba(246,242,234,0.5)",marginTop:8}}>income minus all expenses · {rate}% of events collected</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:10,marginBottom:14}}>
+        {[{lbl:"Total Billed",val:INR(billed),bg:"#EDF3EF",co:C.text},{lbl:"Event Payments",val:INR(evtRec),bg:"#E6F3EC",co:C.green},{lbl:"Quick Log Income",val:INR(logRec),bg:"#E8F0FA",co:C.blue},{lbl:"Total Expenses",val:INR(totalExp),bg:C.accentL,co:C.accent}].map(it=>(
+          <div key={it.lbl} style={{background:it.bg,borderRadius:11,padding:"11px 13px"}}>
+            <div style={{fontSize:10,color:C.muted,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{it.lbl}</div>
+            <div style={{fontSize:16,fontWeight:700,color:it.co}}>{it.val}</div>
+          </div>
+        ))}
+      </div>
+
+      <Card>
+        {[{lbl:"Total Events",val:events.length,co:C.text},{lbl:"Fully Paid",val:events.length-unpaid.length,co:C.green},{lbl:"Pending Payment",val:unpaid.length,co:C.red},{lbl:"Outstanding",val:INR(outstd),co:C.red}].map(it=>(
+          <div key={it.lbl} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
+            <span style={{fontSize:13,color:C.muted}}>{it.lbl}</span>
+            <span style={{fontSize:14,fontWeight:700,color:it.co}}>{it.val}</span>
+          </div>
+        ))}
+      </Card>
+
+      {monthly.length>0&&(
+        <>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:17,fontWeight:700,margin:"18px 0 12px"}}>Monthly Breakdown</div>
+          <Card>
+            {monthly.map(m=>(
+              <div key={m.mo} style={{marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <span style={{fontWeight:700,fontSize:13}}>{m.label}</span>
+                  <span style={{fontWeight:700,fontSize:13,color:m.net>=0?C.green:C.red}}>{INR(m.net)}</span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <div>
+                    <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>IN</div>
+                    <div style={{height:6,borderRadius:3,background:C.border,overflow:"hidden",marginBottom:2}}><div style={{height:"100%",borderRadius:3,background:C.green,width:`${(m.mIn/maxMo*100).toFixed(0)}%`}}/></div>
+                    <div style={{fontSize:12,fontWeight:700,color:C.green}}>{INR(m.mIn)}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>OUT</div>
+                    <div style={{height:6,borderRadius:3,background:C.border,overflow:"hidden",marginBottom:2}}><div style={{height:"100%",borderRadius:3,background:C.red,width:`${(m.mOut/maxMo*100).toFixed(0)}%`}}/></div>
+                    <div style={{fontSize:12,fontWeight:700,color:C.red}}>{INR(m.mOut)}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </Card>
+        </>
+      )}
+
+      {unpaid.length>0&&(
+        <>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:17,fontWeight:700,margin:"16px 0 10px"}}>Pending Collections</div>
+          <div style={{display:"grid",gridTemplateColumns:bp==="desktop"?"1fr 1fr 1fr":bp==="tablet"?"1fr 1fr":"1fr",gap:10}}>
+            {[...unpaid].sort((a,b)=>{const da=a.totalBill-a.payments.reduce((s,p)=>s+p.amount,0);const db=b.totalBill-b.payments.reduce((s,p)=>s+p.amount,0);return db-da;}).map(e=>{const r=e.payments.reduce((s,p)=>s+p.amount,0);return(
+              <Card key={e.id} style={{marginBottom:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontWeight:700,fontSize:14}}>{e.name}</span>{isOvd(e.date)&&<span style={{...pill,background:"#FAEAEA",color:C.red,fontSize:9}}>OVERDUE</span>}</div>
+                    <div style={{fontSize:11,color:C.muted,marginTop:2}}>{e.customer} · {fmtDt(e.date)}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}><div style={{fontWeight:700,color:C.red,fontSize:16}}>{INR(e.totalBill-r)}</div><div style={{fontSize:10,color:C.muted}}>due</div></div>
+                </div>
+              </Card>
+            );})}
+          </div>
+        </>
+      )}
+
+      <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
+        <button onClick={copyWA} style={{...btn,background:copied?C.green:C.accent,color:C.primary,fontWeight:700,flex:1,marginBottom:0,minWidth:180}}>{copied?"✓ Copied!":"📲 Copy for WhatsApp"}</button>
+        <button onClick={()=>setExportModal(true)} style={{...btn,background:"#EDF3EF",color:C.primary,flex:1,marginBottom:0,minWidth:180}}>📄 Export Report</button>
+      </div>
+
+      {exportModal&&(
+        <Modal title="Export Report" bp={bp} onClose={()=>setExportModal(false)}>
+          <div style={{fontSize:13,color:C.muted,marginBottom:16,lineHeight:1.6}}>Pick a detail level. A print dialog will open — save as PDF from there.</div>
+          {[
+            {id:"summary",icon:"📋",label:"Summary Only",desc:"Net position, totals, pending collections. One clean page."},
+            {id:"standard",icon:"📊",label:"Standard Report",desc:"Summary + monthly breakdown + all events + expenses by category."},
+            {id:"full",icon:"📁",label:"Full Detail",desc:"Everything — every payment, log entry, and expense with all fields."},
+          ].map(m=>(
+            <button key={m.id} onClick={()=>{exportReport(m.id,events,income,expenses);setExportModal(false);}} style={{width:"100%",padding:"14px 16px",borderRadius:11,border:`1.5px solid ${C.border}`,background:C.surface,cursor:"pointer",textAlign:"left",marginBottom:10,display:"flex",gap:14,alignItems:"center"}}>
+              <span style={{fontSize:26}}>{m.icon}</span>
+              <div><div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:2}}>{m.label}</div><div style={{fontSize:12,color:C.muted}}>{m.desc}</div></div>
+            </button>
+          ))}
+          <button style={btnO} onClick={()=>setExportModal(false)}>Cancel</button>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function LoginScreen(){
+  const[email,setEmail]=useState("");
+  const[password,setPassword]=useState("");
+  const[err,setErr]=useState("");
+  const[loading,setLoading]=useState(false);
+  const signIn=async e=>{
+    e.preventDefault();
+    if(!email.trim()||!password)return;
+    setErr("");setLoading(true);
+    try{
+      await firebase.auth().signInWithEmailAndPassword(email.trim(),password);
+    }catch(ex){
+      const msg={
+        "auth/user-not-found":"No account found with this email.",
+        "auth/wrong-password":"Incorrect password. Please try again.",
+        "auth/invalid-email":"Please enter a valid email address.",
+        "auth/too-many-requests":"Too many attempts. Please wait a moment.",
+        "auth/invalid-credential":"Incorrect email or password.",
+      }[ex.code]||"Sign-in failed. Please try again.";
+      setErr(msg);
+    }
+    setLoading(false);
+  };
+  return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:C.bg,padding:24}}>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:28,fontWeight:700,color:C.primary,marginBottom:4}}>Sooraj Caterers</div>
+      <div style={{color:C.accent,fontSize:10,fontWeight:700,letterSpacing:1.6,textTransform:"uppercase",marginBottom:40}}>&amp; Events · Accounts</div>
+      <form onSubmit={signIn} style={{background:C.surface,borderRadius:16,padding:"32px 28px",width:"100%",maxWidth:360,border:`1px solid ${C.border}`}}>
+        <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:20,textAlign:"center"}}>Sign in</div>
+        <label style={fLbl}>Email</label>
+        <input style={inp} type="email" placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email"/>
+        <label style={fLbl}>Password</label>
+        <input style={inp} type="password" placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password"/>
+        {err&&<div style={{fontSize:12,color:C.red,marginBottom:12,fontWeight:600}}>{err}</div>}
+        <button type="submit" disabled={loading} style={{...btn,opacity:loading?0.6:1,marginBottom:0}}>
+          {loading?"Signing in…":"Sign In"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function App(){
+  const bp=useBreakpoint();
+  const[tab,setTab]=useState("income");
+  const[events,setEvents]=useState([]);
+  const[income,setIncome]=useState([]);
+  const[expenses,setExpenses]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[synced,setSynced]=useState(false);
+  const[error,setError]=useState(null);
+  const[navHidden,setNavHidden]=useState(false);
+  const[user,setUser]=useState(null);
+  const[authLoading,setAuthLoading]=useState(true);
+  const[undoPending,setUndoPending]=useState(null);
+  const[migrationState,setMigrationState]=useState(null);
+  const[migrationCount,setMigrationCount]=useState({events:0,income:0,expenses:0});
+  const[expTrigger,setExpTrigger]=useState(0);
+  const ref=useRef({events,income,expenses});
+  const lastScrollY=useRef(0);
+  const undoTimerRef=useRef(null);
+  const withUndo=(label,restoreFn)=>{
+    if(undoTimerRef.current)clearTimeout(undoTimerRef.current);
+    setUndoPending({label,restore:restoreFn});
+    undoTimerRef.current=setTimeout(()=>setUndoPending(null),5000);
+  };
+  const commitUndo=()=>{
+    if(!undoPending)return;
+    clearTimeout(undoTimerRef.current);
+    undoPending.restore();
+    setUndoPending(null);
+  };
+  useEffect(()=>{ref.current={events,income,expenses};},[events,income,expenses]);
+
+  useEffect(()=>{
+    const unsub=firebase.auth().onAuthStateChanged(u=>{setUser(u);setAuthLoading(false);});
+    return()=>unsub();
+  },[]);
+
+  useEffect(()=>{
+    if(!user)return;
+    DB_ROOT.get().then(snap=>{
+      if(!snap.exists){setMigrationState("done");return;}
+      const d=snap.data()||{};
+      const ev=d.events||[];const inc=d.income||[];const exp=d.expenses||[];
+      if(ev.length||inc.length||exp.length){
+        setMigrationCount({events:ev.length,income:inc.length,expenses:exp.length});
+        setMigrationState("needed");
+      }else{setMigrationState("done");}
+    }).catch(()=>setMigrationState("done"));
+  },[user]);
+
+  const runMigration=async()=>{
+    setMigrationState("migrating");
+    try{
+      const snap=await DB_ROOT.get();
+      const d=snap.data()||{};
+      const ev=d.events||[];const inc=d.income||[];const exp=d.expenses||[];
+      const allOps=[...ev.map(e=>({col:EVENTS_COL,doc:e})),...inc.map(i=>({col:INCOME_COL,doc:i})),...exp.map(e=>({col:EXPENSES_COL,doc:e}))];
+      for(let i=0;i<allOps.length;i+=400){
+        const b=fsdb.batch();
+        allOps.slice(i,i+400).forEach(({col,doc})=>b.set(col.doc(doc.id),doc));
+        await b.commit();
+      }
+      await DB_ROOT.update({events:firebase.firestore.FieldValue.delete(),income:firebase.firestore.FieldValue.delete(),expenses:firebase.firestore.FieldValue.delete()});
+      setMigrationState("done");
+    }catch(e){console.error(e);setMigrationState("error");}
+  };
+
+  useEffect(()=>{
+    const h=e=>{
+      if(e.altKey&&(e.key==="e"||e.key==="E")){
+        e.preventDefault();
+        setTab("expenses");
+        setExpTrigger(t=>t+1);
+      }
+    };
+    window.addEventListener("keydown",h);
+    return()=>window.removeEventListener("keydown",h);
+  },[]);
+  const handleScroll=e=>{
+    const y=e.target.scrollTop;
+    if(y>lastScrollY.current+10)setNavHidden(true);
+    else if(y<lastScrollY.current-10)setNavHidden(false);
+    lastScrollY.current=y;
+  };
+
+  useEffect(()=>{
+    if(!user){setLoading(true);setSynced(false);return;}
+    const loaded={events:false,income:false,expenses:false};
+    const checkLoaded=()=>{if(loaded.events&&loaded.income&&loaded.expenses){setLoading(false);setSynced(true);}};
+    const onErr=err=>{console.error(err);setError("Cannot connect to Firebase. Check your config.");setLoading(false);};
+    const u1=EVENTS_COL.onSnapshot(snap=>{setEvents(snap.docs.map(d=>({...d.data(),id:d.id})));loaded.events=true;checkLoaded();},onErr);
+    const u2=INCOME_COL.onSnapshot(snap=>{setIncome(snap.docs.map(d=>({...d.data(),id:d.id})));loaded.income=true;checkLoaded();},onErr);
+    const u3=EXPENSES_COL.onSnapshot(snap=>{setExpenses(snap.docs.map(d=>({...d.data(),id:d.id})));loaded.expenses=true;checkLoaded();},onErr);
+    return()=>{u1();u2();u3();};
+  },[user]);
+
+  const saveEv=async newArr=>{
+    const old=ref.current.events;setEvents(newArr);
+    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EVENTS_COL.doc(e.id));});newArr.forEach(e=>b.set(EVENTS_COL.doc(e.id),e));await b.commit();}catch(e){console.error(e);}
+  };
+  const saveIn=async newArr=>{
+    const old=ref.current.income;setIncome(newArr);
+    try{const b=fsdb.batch();old.forEach(i=>{if(!newArr.find(x=>x.id===i.id))b.delete(INCOME_COL.doc(i.id));});newArr.forEach(i=>b.set(INCOME_COL.doc(i.id),i));await b.commit();}catch(e){console.error(e);}
+  };
+  const saveEx=async newArr=>{
+    const old=ref.current.expenses;setExpenses(newArr);
+    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EXPENSES_COL.doc(e.id));});newArr.forEach(e=>b.set(EXPENSES_COL.doc(e.id),e));await b.commit();}catch(e){console.error(e);}
+  };
+
+  const isMob=bp==="mobile";
+  const sideW=bp==="desktop"?220:68;
+
+  if(authLoading)return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:C.bg,gap:10}}><div style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:C.primary,fontWeight:700}}>Sooraj Caterers</div><div style={{fontSize:12,color:C.muted}}>Checking credentials…</div></div>);
+  if(!user)return <LoginScreen/>;
+  if(loading)return(
+    <div style={{display:"flex",flexDirection:"column",minHeight:"100vh",background:C.bg}}>
+      <div style={{background:C.primary,padding:isMob?"12px 16px":"14px 28px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontFamily:"'Playfair Display',serif",color:"#F6F2EA",fontSize:isMob?18:22,fontWeight:700}}>Sooraj Caterers</div><div style={{color:C.accent,fontSize:9,fontWeight:700,letterSpacing:1.6,textTransform:"uppercase",marginTop:2}}>&amp; Events · Accounts</div></div>
+      </div>
+      <div style={{padding:isMob?"14px":"24px 28px",flex:1}}>
+        <div className="sk" style={{height:72,borderRadius:12,marginBottom:16}}/>
+        {[1,2,3].map(i=><div key={i} className="sk" style={{height:110,borderRadius:13,marginBottom:12}}/>)}
+      </div>
+    </div>
+  );
+  if(!loading&&(migrationState==="needed"||migrationState==="migrating"||migrationState==="error"))return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:C.bg,padding:24}}>
+      <div style={{background:C.surface,borderRadius:16,padding:"32px 28px",width:"100%",maxWidth:440,border:`1px solid ${C.border}`,textAlign:"center"}}>
+        <div style={{fontSize:42,marginBottom:14}}>📦</div>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:C.primary,marginBottom:10}}>One-time data migration</div>
+        <div style={{fontSize:13,color:C.muted,lineHeight:1.8,marginBottom:20}}>
+          Your existing data is safe and just needs to be moved to the new format.<br/>
+          <strong style={{color:C.text}}>{migrationCount.events} events · {migrationCount.income} income entries · {migrationCount.expenses} expenses</strong> found.
+        </div>
+        {migrationState==="error"&&<div style={{fontSize:12,color:C.red,marginBottom:14,fontWeight:600}}>⚠ Something went wrong. Please try again.</div>}
+        <button onClick={runMigration} disabled={migrationState==="migrating"} style={{...btn,background:migrationState==="migrating"?C.muted:C.green,marginBottom:10}}>
+          {migrationState==="migrating"?"⏳  Migrating your data, please wait…":"✅  Migrate My Data Now"}
+        </button>
+        <div style={{fontSize:11,color:C.muted}}>This runs once and will not delete any data.</div>
+      </div>
+    </div>
+  );
+  if(error)return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:C.bg,gap:12,padding:24}}><div style={{fontSize:36}}>⚠️</div><div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:C.primary,fontWeight:700,textAlign:"center"}}>Connection Error</div><div style={{fontSize:13,color:C.muted,textAlign:"center",lineHeight:1.7}}>{error}</div></div>);
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",minHeight:"100vh",background:C.bg}}>
+      <header style={{background:C.primary,padding:isMob?"12px 16px":"14px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0,position:"sticky",top:0,zIndex:100}}>
+        <div>
+          <div style={{fontFamily:"'Playfair Display',serif",color:"#F6F2EA",fontSize:isMob?18:22,fontWeight:700,lineHeight:1.1}}>Sooraj Caterers</div>
+          <div style={{color:C.accent,fontSize:9,fontWeight:700,letterSpacing:1.6,textTransform:"uppercase",marginTop:2}}>& Events · Accounts</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <div style={{width:7,height:7,borderRadius:"50%",background:synced?"#6FDDAA":"#FFD166"}}/>
+            <span style={{fontSize:10,color:"rgba(246,242,234,0.5)",fontWeight:600}}>{synced?"LIVE":""}</span>
+          </div>
+          <button onClick={()=>firebase.auth().signOut()} title={`Signed in as ${user.email}\nClick to sign out`} style={{background:"none",border:"none",cursor:"pointer",padding:0}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:C.accent,color:C.primary,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:15}}>{(user.email||"?")[0].toUpperCase()}</div>
+          </button>
+        </div>
+      </header>
+
+      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+        {!isMob&&(
+          <aside style={{width:sideW,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0,padding:"16px 0",position:"sticky",top:56,height:"calc(100vh - 56px)",overflowY:"auto"}}>
+            {bp==="desktop"&&<div style={{padding:"0 18px 20px",borderBottom:`1px solid ${C.border}`,marginBottom:8}}><div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:1}}>Navigation</div></div>}
+            {TABS.map(t=>{const active=tab===t.id;return(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:bp==="desktop"?12:0,justifyContent:bp==="tablet"?"center":"flex-start",padding:bp==="desktop"?"11px 18px":"12px 0",border:"none",background:active?C.accentL:"transparent",cursor:"pointer",width:"100%",borderLeft:active?`3px solid ${C.accent}`:"3px solid transparent",marginBottom:2}}>
+                <span style={{fontSize:20}}>{t.icon}</span>
+                {bp==="desktop"&&<span style={{fontSize:13,fontWeight:active?700:500,color:active?C.accent:C.muted}}>{t.label}</span>}
+              </button>
+            );})}
+          </aside>
+        )}
+        <main onScroll={handleScroll} style={{flex:1,overflowY:"auto",padding:isMob?"14px 14px calc(80px + env(safe-area-inset-bottom))":"24px 28px"}}>
+          <DailySummaryBar events={events} income={income} expenses={expenses}/>
+          {tab==="income"   &&<IncomeTab   events={events} income={income} onSaveEvents={saveEv} onSaveIncome={saveIn} withUndo={withUndo} bp={bp}/>}
+          {tab==="expenses" &&<ExpensesTab expenses={expenses} events={events} onSave={saveEx} withUndo={withUndo} bp={bp} addTrigger={expTrigger}/>}
+          {tab==="channels" &&<ChannelsTab events={events} income={income} expenses={expenses} bp={bp}/>}
+          {tab==="summary"  &&<SummaryTab  events={events} income={income} expenses={expenses} bp={bp}/>}
+        </main>
+      </div>
+
+      {isMob&&(
+        <nav style={{position:"fixed",bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",flexDirection:"column",zIndex:200,transform:navHidden?"translateY(100%)":"translateY(0)",transition:"transform 0.28s ease"}}>
+          <div style={{display:"flex",height:62}}>
+            {TABS.map(t=>(
+              <button key={t.id} onClick={()=>{setTab(t.id);setNavHidden(false);}} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",border:"none",background:"transparent",cursor:"pointer",gap:2}}>
+                <span style={{fontSize:20}}>{t.icon}</span>
+                <span style={{fontSize:10,fontWeight:tab===t.id?700:500,color:tab===t.id?C.primary:C.muted}}>{t.label}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{height:"env(safe-area-inset-bottom)",background:C.surface}}/>
+        </nav>
+      )}
+      {undoPending&&(
+        <div style={{position:"fixed",bottom:isMob?78:24,left:"50%",transform:"translateX(-50%)",background:C.primary,color:"#F6F2EA",borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:14,zIndex:1000,boxShadow:"0 4px 24px rgba(0,0,0,0.35)",whiteSpace:"nowrap"}}>
+          <span style={{fontSize:13}}>{undoPending.label}</span>
+          <button onClick={commitUndo} style={{background:C.accent,color:C.primary,border:"none",borderRadius:7,padding:"6px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Undo</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
