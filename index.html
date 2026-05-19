@@ -450,7 +450,7 @@ function IncomeTab({events,income,onSaveEvents,onSaveIncome,withUndo,bp}){
   );
 }
 
-function ExpensesTab({expenses,events,onSave,withUndo,bp,addTrigger}){
+function ExpensesTab({expenses,events,income,onSave,withUndo,bp,addTrigger}){
   const[modal,setModal]=useState(null);
   const[editTarget,setET]=useState(null);
   const[confirmId,setCId]=useState(null);
@@ -461,6 +461,16 @@ function ExpensesTab({expenses,events,onSave,withUndo,bp,addTrigger}){
   const blankX={amount:"",category:EXP_CATS[0],channel:"c0",eventId:"",date:today(),note:"",photo:"",recurring:false};
   const add=f=>{if(!f.amount)return;onSave([{id:uid(),...f,amount:Number(f.amount)},...expenses]);setModal(null);};
   const saveEd=f=>{if(!f.amount)return;onSave(expenses.map(e=>e.id===editTarget.id?{...e,...f,amount:Number(f.amount)}:e));setModal(null);};
+  const allPays=[...events.flatMap(e=>e.payments),...(income||[])];
+  const channelBalances=EXP_CHANNELS.filter(c=>c.id!=="c0").reduce((acc,chn)=>{
+    const rec=allPays.filter(p=>p.channel===chn.id).reduce((s,p)=>s+p.amount,0);
+    const paid=expenses.filter(e=>e.channel===chn.id).reduce((s,e)=>s+e.amount,0);
+    acc[chn.id]=rec-paid;return acc;
+  },{});
+  const c3Rec=allPays.filter(p=>p.channel==="c3").reduce((s,p)=>s+p.amount,0);
+  const c3Paid=expenses.filter(e=>e.channel==="c3").reduce((s,e)=>s+e.amount,0);
+  const c0Paid=expenses.filter(e=>e.channel==="c0").reduce((s,e)=>s+e.amount,0);
+  channelBalances["c0"]=c3Rec-c3Paid-c0Paid;
   const del=id=>{
     const prev=expenses;
     const exp=expenses.find(e=>e.id===id);
@@ -474,6 +484,10 @@ function ExpensesTab({expenses,events,onSave,withUndo,bp,addTrigger}){
     const[noteErr,setNoteErr]=useState(false);
     const handleSave=()=>{if(!f.amount)return;if(f.channel==="c0"&&!f.note.trim()){setNoteErr(true);return;}setNoteErr(false);onSave(f);};
     const handlePhoto=e=>{const file=e.target.files[0];if(!file)return;compressImage(file,b64=>setF(p=>({...p,photo:b64})));};
+    const chanBal=channelBalances[f.channel]!==undefined?channelBalances[f.channel]:null;
+    const amt=Number(f.amount||0);
+    const wouldOverdraw=chanBal!==null&&amt>0&&(chanBal-amt)<0;
+    const isCashGen=f.channel==="c0";
     return(
       <>
         <label style={fLbl}>Amount (₹)</label>
@@ -481,9 +495,17 @@ function ExpensesTab({expenses,events,onSave,withUndo,bp,addTrigger}){
         <label style={fLbl}>Category</label>
         <select style={sel} value={f.category} onChange={e=>setF(p=>({...p,category:e.target.value}))}>{EXP_CATS.map(c=><option key={c}>{c}</option>)}</select>
         <label style={fLbl}>Paid From Channel</label>
-        <select style={{...sel,borderColor:f.channel==="c0"?C.accent:C.border}} value={f.channel} onChange={e=>setF(p=>({...p,channel:e.target.value}))}>
+        <select style={{...sel,borderColor:wouldOverdraw?C.red:isCashGen?C.accent:C.border}} value={f.channel} onChange={e=>setF(p=>({...p,channel:e.target.value}))}>
           {EXP_CHANNELS.map(c=><option key={c.id} value={c.id}>{c.name}{c.holder!=="General"?` (${c.holder})`:""}</option>)}
         </select>
+        {chanBal!==null&&amt===0&&<div style={{fontSize:11,color:C.muted,marginTop:-10,marginBottom:10}}>{isCashGen?"Cash in Hand remaining":"Available"}: {INR(chanBal)}</div>}
+        {wouldOverdraw&&(
+          <div style={{background:"#FAEAEA",border:`1.5px solid ${C.red}`,borderRadius:9,padding:"10px 13px",marginBottom:13}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.red}}>⚠ {isCashGen?"Cash in Hand exhausted":"Channel exhausted"} — balance will go negative</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:4}}>{isCashGen?"Cash in Hand remaining":"Available"}: {INR(chanBal)} &nbsp;·&nbsp; After this expense: {INR(chanBal-amt)}</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:3}}>You can still save — the balance will go into deficit.</div>
+          </div>
+        )}
         <label style={{...fLbl,color:noteErr?C.red:f.channel==="c0"?C.accent:C.muted}}>
           {f.channel==="c0"?"Note — required for Cash (what was this for?)":"Note (optional)"}
         </label>
@@ -982,7 +1004,7 @@ function App(){
         <main onScroll={handleScroll} style={{flex:1,overflowY:"auto",padding:isMob?"14px 14px calc(80px + env(safe-area-inset-bottom))":"24px 28px"}}>
           <DailySummaryBar events={events} income={income} expenses={expenses}/>
           {tab==="income"   &&<IncomeTab   events={events} income={income} onSaveEvents={saveEv} onSaveIncome={saveIn} withUndo={withUndo} bp={bp}/>}
-          {tab==="expenses" &&<ExpensesTab expenses={expenses} events={events} onSave={saveEx} withUndo={withUndo} bp={bp} addTrigger={expTrigger}/>}
+          {tab==="expenses" &&<ExpensesTab expenses={expenses} events={events} income={income} onSave={saveEx} withUndo={withUndo} bp={bp} addTrigger={expTrigger}/>}
           {tab==="channels" &&<ChannelsTab events={events} income={income} expenses={expenses} bp={bp}/>}
           {tab==="summary"  &&<SummaryTab  events={events} income={income} expenses={expenses} bp={bp}/>}
         </main>
