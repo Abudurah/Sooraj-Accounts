@@ -208,11 +208,10 @@ async function renderA3Sheet(sheetPlan, cardCache) {
   const leftTopY   = Math.floor((A3H - leftTotalH) / 2);   // ~50px
 
   // Right: 2 cards rotated 90° CCW → visual size CH×CW (1200×1800)
-  const rightX      = GAP + CW + GAP;                       // 1840px
+  const rightX      = GAP + CW + 50;                        // 1870px (50px col gap)
   const rightCardW  = CH;                                    // 1200px visual width
   const rightCardH  = CW;                                    // 1800px visual height
-  const rightTotalH = 2 * rightCardH + GAP;                 // 3620px
-  const rightTopY   = Math.floor((A3H - rightTotalH) / 2);  // ~670px
+  const rightTopY   = GAP;                                   // 20px from top
 
   const canvas = document.createElement("canvas");
   canvas.width = A3W; canvas.height = A3H;
@@ -561,7 +560,6 @@ function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
         setCards([...rendered]);
       }
       if (cancelled) return;
-      setPhase("compositing");
       const sheetUrls = [];
       for (const plan of sheetPlans) {
         if (cancelled) return;
@@ -595,7 +593,7 @@ function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
           <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>
             {phase === "done"
               ? `✓ ${sheets.length} A3 sheet${sheets.length > 1 ? "s" : ""} ready — 3508×4961 px (A3 portrait @ 300 DPI)`
-              : phase === "compositing"
+              : sheets.length > 0
               ? `Compositing sheet ${sheets.length + 1} of ${sheetPlans?.length}…`
               : `Rendering cards… ${cards.length} / ${totalCards}`}
           </div>
@@ -610,9 +608,7 @@ function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
       {phase !== "done" && (
         <div style={{ width: "100%", height: 3, background: "#0a1828", flexShrink: 0 }}>
           <div style={{
-            width: phase === "compositing"
-              ? `${90 + (sheets.length / Math.max(sheetPlans?.length || 1, 1)) * 10}%`
-              : `${(cards.length / Math.max(totalCards, 1)) * 90}%`,
+            width: `${(cards.length / Math.max(totalCards, 1)) * 80 + (sheets.length / Math.max(sheetPlans?.length || 1, 1)) * 20}%`,
             height: "100%", background: "#c4a35a", transition: "width 0.3s",
           }} />
         </div>
@@ -637,7 +633,7 @@ function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
         ))}
         {phase !== "done" && (
           <div style={{ color: "#1e3050", fontSize: 13, padding: 48, alignSelf: "center" }}>
-            {phase === "compositing" ? "Compositing A3 sheet…" : "Rendering menu cards…"}
+            {sheets.length > 0 ? "Compositing A3 sheet…" : "Rendering menu cards…"}
           </div>
         )}
       </div>
