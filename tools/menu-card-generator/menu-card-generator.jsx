@@ -362,30 +362,27 @@ function ExportModal({ items, ov, gfs, goy, gox = 0, onClose }) {
 // ── A3 SHEET PLANNER ─────────────────────────────────
 function A3SheetPlanner({ items, onConfirm, onClose }) {
   const emptySheet = () => ({ left: [null, null, null, null], right: [null, null] });
-  const [plans,  setPlans]  = useState([emptySheet()]);
-  const [picked, setPicked] = useState(null);
+  const [plans,    setPlans]    = useState([emptySheet()]);
+  const [openSlot, setOpenSlot] = useState(null); // { si, side, slot }
+  const [isMobileW, setIsMobileW] = useState(window.innerWidth < 600);
+
+  useEffect(() => {
+    const onResize = () => setIsMobileW(window.innerWidth < 600);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const assigned = new Set(plans.flatMap(p => [...p.left, ...p.right]).filter(Boolean));
-  const pool     = items.filter(n => !assigned.has(n));
+  const canRender = plans.some(p => [...p.left, ...p.right].some(Boolean));
 
-  const assign = (si, side, slot) => {
-    if (!picked) return;
-    setPlans(prev => prev.map((p, i) => {
-      const c = {
-        left:  p.left.map(n  => n === picked ? null : n),
-        right: p.right.map(n => n === picked ? null : n),
-      };
-      if (i === si) { if (side === "left") c.left[slot] = picked; else c.right[slot] = picked; }
-      return c;
-    }));
-    setPicked(null);
-  };
+  const getSlotName = (si, side, slot) =>
+    side === "left" ? plans[si].left[slot] : plans[si].right[slot];
 
-  const unassign = (si, side, slot) =>
+  const setSlot = (si, side, slot, name) =>
     setPlans(prev => prev.map((p, i) => {
       if (i !== si) return p;
       const u = { left: [...p.left], right: [...p.right] };
-      if (side === "left") u.left[slot] = null; else u.right[slot] = null;
+      if (side === "left") u.left[slot] = name; else u.right[slot] = name;
       return u;
     }));
 
@@ -401,28 +398,32 @@ function A3SheetPlanner({ items, onConfirm, onClose }) {
     }));
   };
 
-  const canRender = plans.some(p => [...p.left, ...p.right].some(Boolean));
-
   const SlotBtn = ({ name, si, side, slot }) => (
     <button className="mcg-btn"
-      onClick={() => name
-        ? (picked ? assign(si, side, slot) : unassign(si, side, slot))
-        : assign(si, side, slot)
-      }
+      onClick={() => setOpenSlot({ si, side, slot })}
       style={{
-        ...BTN, borderRadius: 4, textAlign: "center", width: "100%",
-        fontFamily: "monospace", fontSize: 10,
+        ...BTN, borderRadius: 6, textAlign: "left", width: "100%",
+        fontFamily: "monospace", fontSize: 12,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        padding: side === "right" ? "12px 8px" : "8px 10px",
-        height:  side === "right" ? 54 : 34,
-        background: name ? "#0d2214" : (picked ? "#0f1f0f" : "#08121e"),
-        color:      name ? "#5daa6e" : "#1a3a5a",
-        border: `1px solid ${name ? "#3a7a4e" : (picked ? "#1a4a1a" : "#0e1c30")}`,
-        cursor: name || picked ? "pointer" : "default",
+        padding: "0 14px", minHeight: 48,
+        background: name ? "#0d2214" : "#08121e",
+        color:      name ? "#5daa6e" : "#2a4a6a",
+        border: `1px solid ${name ? "#3a7a4e" : "#0e1c30"}`,
+        cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
       }}>
-      {name || `— slot ${slot + 1} —`}
+      {name
+        ? <><span style={{ fontSize: 8, color: "#3a7a4e" }}>●</span>{name}</>
+        : <span style={{ fontSize: 11, color: "#1a3a5a" }}>＋ tap to assign</span>
+      }
     </button>
   );
+
+  // Cards available in the picker: unassigned ones + the card already in this slot
+  const pickerSlot = openSlot;
+  const pickerCurrent = pickerSlot ? getSlotName(pickerSlot.si, pickerSlot.side, pickerSlot.slot) : null;
+  const pickerCards = pickerSlot
+    ? items.filter(n => n === pickerCurrent || !assigned.has(n))
+    : [];
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.97)", zIndex: 100, display: "flex", flexDirection: "column" }}>
@@ -430,40 +431,15 @@ function A3SheetPlanner({ items, onConfirm, onClose }) {
       <div style={{ background: "#050c1c", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #0e1c30", flexShrink: 0 }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>📋 Plan A3 Sheets</div>
-          <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>
-            Tap a card to select it, then tap a slot · Left = landscape · Right = portrait (rotated)
-          </div>
+          <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>Tap a slot to assign a card · Left = landscape · Right = portrait</div>
         </div>
         <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Card pool */}
-        <div>
-          <div style={{ fontSize: 9, color: "#3a5a3a", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
-            Available ({pool.length}) — tap to select
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {pool.map(name => (
-              <button key={name} className="mcg-btn"
-                onClick={() => setPicked(picked === name ? null : name)}
-                style={{
-                  ...BTN, fontSize: 11, padding: "5px 12px",
-                  background:  picked === name ? "#c4a35a" : "#0b1727",
-                  color:       picked === name ? "#000"    : "#7a9ac0",
-                  borderColor: picked === name ? "#c4a35a" : "#1a3a5a",
-                  fontWeight:  picked === name ? "bold" : "normal",
-                }}>
-                {picked === name ? "● " : ""}{name}
-              </button>
-            ))}
-            {pool.length === 0 && <span style={{ fontSize: 11, color: "#1e3050" }}>All cards assigned</span>}
-          </div>
-        </div>
-
-        {/* Sheet configs */}
+      {/* Sheet configs */}
+      <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
         {plans.map((plan, si) => (
-          <div key={si} style={{ background: "#060f1e", borderRadius: 8, border: "1px solid #0e1c30", padding: 16 }}>
+          <div key={si} style={{ background: "#060f1e", borderRadius: 8, border: "1px solid #0e1c30", padding: 14 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
               <span style={{ fontSize: 12, fontWeight: "bold", color: "#c4a35a" }}>A3 Sheet {si + 1}</span>
               <div style={{ display: "flex", gap: 8 }}>
@@ -480,33 +456,22 @@ function A3SheetPlanner({ items, onConfirm, onClose }) {
                 )}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 16 }}>
-              {/* Left: 4 landscape slots */}
+            <div style={{ display: "flex", flexDirection: isMobileW ? "column" : "row", gap: 12 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 9, color: "#2a5070", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
-                  Left — landscape (4 slots)
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {plan.left.map((name, slot) => (
-                    <SlotBtn key={slot} name={name} si={si} side="left" slot={slot} />
-                  ))}
+                <div style={{ fontSize: 9, color: "#2a5070", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Left — landscape (4 slots)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {plan.left.map((name, slot) => <SlotBtn key={slot} name={name} si={si} side="left" slot={slot} />)}
                 </div>
               </div>
-              {/* Right: 2 portrait slots */}
-              <div style={{ width: 140 }}>
-                <div style={{ fontSize: 9, color: "#2a5070", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
-                  Right — portrait (2 slots)
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {plan.right.map((name, slot) => (
-                    <SlotBtn key={slot} name={name} si={si} side="right" slot={slot} />
-                  ))}
+              <div style={{ width: isMobileW ? "100%" : 180 }}>
+                <div style={{ fontSize: 9, color: "#2a5070", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Right — portrait (2 slots)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {plan.right.map((name, slot) => <SlotBtn key={slot} name={name} si={si} side="right" slot={slot} />)}
                 </div>
               </div>
             </div>
           </div>
         ))}
-
         <button className="mcg-btn" onClick={() => setPlans(p => [...p, emptySheet()])}
           style={{ ...BTN, fontSize: 12, padding: "8px 16px", width: "fit-content", borderColor: "#1a3a5a", color: "#3a6a8a" }}>
           + Add A3 Sheet
@@ -514,9 +479,9 @@ function A3SheetPlanner({ items, onConfirm, onClose }) {
       </div>
 
       {/* Footer */}
-      <div style={{ background: "#050c1c", borderTop: "1px solid #0e1c30", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <div style={{ background: "#050c1c", borderTop: "1px solid #0e1c30", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <div style={{ fontSize: 10, color: "#1e3050" }}>
-          {plans.length} sheet{plans.length !== 1 ? "s" : ""} · {assigned.size} assigned · {pool.length} unassigned
+          {plans.length} sheet{plans.length !== 1 ? "s" : ""} · {assigned.size} of {items.length} assigned
         </div>
         <button className="mcg-btn" onClick={() => onConfirm(plans)} disabled={!canRender}
           style={{
@@ -530,6 +495,58 @@ function A3SheetPlanner({ items, onConfirm, onClose }) {
           ▶ Render {plans.length} Sheet{plans.length !== 1 ? "s" : ""}
         </button>
       </div>
+
+      {/* Card picker — bottom sheet on mobile, centred modal on desktop */}
+      {openSlot && (
+        <>
+          <div onClick={() => setOpenSlot(null)}
+            style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }} />
+          <div style={{
+            position: "fixed", zIndex: 201,
+            ...(isMobileW
+              ? { bottom: 0, left: 0, right: 0, borderRadius: "18px 18px 0 0", maxHeight: "72vh" }
+              : { top: "50%", left: "50%", transform: "translate(-50%,-50%)", borderRadius: 14, width: 340, maxHeight: "80vh" }
+            ),
+            background: "#060f1e", border: "1px solid #0e1c30",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+          }}>
+            <div style={{ padding: "16px 18px 10px", borderBottom: "1px solid #0e1c30", flexShrink: 0 }}>
+              <div style={{ fontSize: 13, color: "#c4a35a", fontWeight: "bold" }}>
+                {openSlot.side === "left" ? "Landscape" : "Portrait"} slot {openSlot.slot + 1}
+                {" — "}Sheet {openSlot.si + 1}
+              </div>
+              <div style={{ fontSize: 10, color: "#2a4060", marginTop: 3 }}>
+                {pickerCards.length} card{pickerCards.length !== 1 ? "s" : ""} available · tap to assign
+              </div>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+              {pickerCurrent && (
+                <button className="mcg-btn"
+                  onClick={() => { setSlot(openSlot.si, openSlot.side, openSlot.slot, null); setOpenSlot(null); }}
+                  style={{ ...BTN, minHeight: 46, padding: "0 16px", color: "#8a4040", borderColor: "#3a1a1a", borderRadius: 8, textAlign: "left", fontSize: 12 }}>
+                  ✕ Clear slot
+                </button>
+              )}
+              {pickerCards.length === 0 && (
+                <div style={{ color: "#1e3050", fontSize: 12, padding: 16, textAlign: "center" }}>All cards already assigned</div>
+              )}
+              {pickerCards.map(name => (
+                <button key={name} className="mcg-btn"
+                  onClick={() => { setSlot(openSlot.si, openSlot.side, openSlot.slot, name); setOpenSlot(null); }}
+                  style={{
+                    ...BTN, minHeight: 52, padding: "0 16px", borderRadius: 8,
+                    textAlign: "left", fontSize: 13, fontFamily: "monospace",
+                    background: name === pickerCurrent ? "#0d2214" : "#0b1727",
+                    color:      name === pickerCurrent ? "#5daa6e" : "#7a9ac0",
+                    borderColor: name === pickerCurrent ? "#3a7a4e" : "#1a3a5a",
+                  }}>
+                  {name === pickerCurrent ? "● " : ""}{name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -653,8 +670,7 @@ export default function App() {
   const [showGuides, setShowGuides] = useState(false);
   const [winW,      setWinW]     = useState(window.innerWidth);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 720);
-  const [selectedForA3, setSelectedForA3] = useState(new Set());
-  const [a3Exporting, setA3Exporting]     = useState(false);
+  const [a3Exporting, setA3Exporting] = useState(false);
 
   useEffect(() => {
     const onResize = () => {
@@ -690,7 +706,7 @@ export default function App() {
         <ExportModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setExporting(false)} />
       )}
       {a3Exporting && (
-        <A3Modal items={[...selectedForA3]} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
+        <A3Modal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
       )}
 
             <div className={`mcg-overlay${sidebarOpen && isMobile ? " open" : ""}`}
@@ -820,19 +836,19 @@ export default function App() {
 
         <button className="mcg-btn"
           onClick={() => setA3Exporting(true)}
-          disabled={selectedForA3.size === 0}
+          disabled={items.length === 0}
           style={{
-            background: selectedForA3.size > 0 ? "#0d2214" : "#060e18",
-            color: selectedForA3.size > 0 ? "#5daa6e" : "#1e3050",
-            border: `1px solid ${selectedForA3.size > 0 ? "#3a7a4e" : "#0e1c30"}`,
+            background: items.length > 0 ? "#0d2214" : "#060e18",
+            color: items.length > 0 ? "#5daa6e" : "#1e3050",
+            border: `1px solid ${items.length > 0 ? "#3a7a4e" : "#0e1c30"}`,
             borderRadius: 8, padding: "13px", fontSize: 13,
             fontWeight: "bold", letterSpacing: "0.05em",
-            cursor: selectedForA3.size > 0 ? "pointer" : "not-allowed",
+            cursor: items.length > 0 ? "pointer" : "not-allowed",
           }}>
-          📄 &nbsp;Build A3 Sheet ({selectedForA3.size} selected)
+          📄 &nbsp;Build A3 Sheet
         </button>
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
-          Check cards, then assign to slots<br />
+          Tap a slot to pick which card goes there<br />
           Exports at <strong style={{color:"#1e3050"}}>3508 × 4961 px</strong> — A3 @ 300 DPI
         </div>
       </div>
@@ -863,50 +879,25 @@ export default function App() {
             Preview at {Math.round(PREVIEW_SCALE * 100)}% — exports at 1800 × 1200 px
           </div>
 
-          {/* A3 selection header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 2 }}>
-            <div style={{ fontSize: 9, color: "#3a5a3a", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              ☐ Check to add to A3 sheet ({selectedForA3.size} selected)
-            </div>
-            <button className="mcg-btn" onClick={() => {
-              if (selectedForA3.size === items.length) setSelectedForA3(new Set());
-              else setSelectedForA3(new Set(items));
-            }} style={{ ...BTN, fontSize: 9, padding: "2px 8px", color: "#3a7a4e", borderColor: "#1a4a2e" }}>
-              {selectedForA3.size === items.length ? "Clear All" : "Select All"}
-            </button>
-          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "center", maxWidth: 600 }}>
             {items.map((item, i) => {
-              const active = i === safeIdx, custom = !!ov[item], inA3 = selectedForA3.has(item);
+              const active = i === safeIdx, custom = !!ov[item];
               return (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <input
-                    type="checkbox"
-                    checked={inA3}
-                    title="Add to A3 sheet"
-                    onChange={e => setSelectedForA3(prev => {
-                      const next = new Set(prev);
-                      if (e.target.checked) next.add(item); else next.delete(item);
-                      return next;
-                    })}
-                    style={{ accentColor: "#5daa6e", cursor: "pointer", width: 13, height: 13 }}
-                  />
-                  <button className="mcg-btn" onClick={() => setIdx(i)}
-                    style={{
-                      background: active ? "#c4a35a" : inA3 ? "#0d2214" : "#0b1727",
-                      color: active ? "#000" : inA3 ? "#5daa6e" : custom ? "#c4a35a" : "#2a3d58",
-                      border: `1px solid ${active ? "#c4a35a" : inA3 ? "#3a7a4e" : custom ? "#c4a35a44" : "#0e1c30"}`,
-                      borderRadius: 4, padding: "4px 11px", fontSize: 11,
-                      cursor: "pointer", fontFamily: "monospace",
-                    }}>
-                    {inA3 && !active ? "✓ " : ""}{item}{custom && !active ? " ✎" : ""}
-                  </button>
-                </div>
+                <button key={i} className="mcg-btn" onClick={() => setIdx(i)}
+                  style={{
+                    background: active ? "#c4a35a" : "#0b1727",
+                    color: active ? "#000" : custom ? "#c4a35a" : "#2a3d58",
+                    border: `1px solid ${active ? "#c4a35a" : custom ? "#c4a35a44" : "#0e1c30"}`,
+                    borderRadius: 4, padding: "4px 11px", fontSize: 11,
+                    cursor: "pointer", fontFamily: "monospace",
+                  }}>
+                  {item}{custom && !active ? " ✎" : ""}
+                </button>
               );
             })}
           </div>
           <div style={{ fontSize: 9, color: "#0e1c30", textAlign: "center", lineHeight: 1.7 }}>
-            Click any name to preview · ☑ checked = on A3 sheet · ✎ custom settings
+            Click any name to preview · ✎ = custom settings
           </div>
         </>) : (
           <div style={{ color: "#0e1c30", textAlign: "center" }}>

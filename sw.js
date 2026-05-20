@@ -1,4 +1,4 @@
-const CACHE = 'sooraj-v6';
+const CACHE = 'sooraj-v7';
 const FILES = ['/Sooraj-Accounts/', '/Sooraj-Accounts/index.html', '/Sooraj-Accounts/icon.png'];
 
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); });
