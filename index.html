@@ -88,7 +88,7 @@ const PAY_TYPES=[
 ];
 const EXP_CATS=["Raw Materials","Labor / Staff","Transport","Rentals","Miscellaneous"];
 const MOS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const TABS=[{id:"income",icon:"💰",label:"Income"},{id:"expenses",icon:"💸",label:"Expenses"},{id:"channels",icon:"🏦",label:"Channels"},{id:"summary",icon:"📊",label:"Summary"}];
+const TABS=[{id:"income",icon:"💰",label:"Income"},{id:"expenses",icon:"💸",label:"Expenses"},{id:"channels",icon:"🏦",label:"Channels"},{id:"summary",icon:"📊",label:"Summary"},{id:"cards",icon:"🃏",label:"Menu Cards"}];
 
 const INR  =n=>"₹"+Number(n||0).toLocaleString("en-IN");
 const uid  =()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
@@ -1001,12 +1001,13 @@ function App(){
             );})}
           </aside>
         )}
-        <main onScroll={handleScroll} style={{flex:1,overflowY:"auto",padding:isMob?"14px 14px calc(80px + env(safe-area-inset-bottom))":"24px 28px"}}>
-          <DailySummaryBar events={events} income={income} expenses={expenses}/>
+        <main onScroll={handleScroll} style={{flex:1,overflowY:"auto",padding:tab==="cards"?0:isMob?"14px 14px calc(80px + env(safe-area-inset-bottom))":"24px 28px"}}>
+          {tab!=="cards"&&<DailySummaryBar events={events} income={income} expenses={expenses}/>}
           {tab==="income"   &&<IncomeTab   events={events} income={income} onSaveEvents={saveEv} onSaveIncome={saveIn} withUndo={withUndo} bp={bp}/>}
           {tab==="expenses" &&<ExpensesTab expenses={expenses} events={events} income={income} onSave={saveEx} withUndo={withUndo} bp={bp} addTrigger={expTrigger}/>}
           {tab==="channels" &&<ChannelsTab events={events} income={income} expenses={expenses} bp={bp}/>}
           {tab==="summary"  &&<SummaryTab  events={events} income={income} expenses={expenses} bp={bp}/>}
+          {tab==="cards"&&<iframe src="tools/menu-card-generator/dist/index.html" title="Menu Card Generator" style={{position:"fixed",top:56,left:isMob?0:sideW,right:0,bottom:isMob?"calc(62px + env(safe-area-inset-bottom))":0,border:"none",width:isMob?"100%":`calc(100% - ${sideW}px)`,height:isMob?`calc(100vh - 56px - 62px - env(safe-area-inset-bottom))`:`calc(100vh - 56px)`}}/>}
         </main>
       </div>
 
