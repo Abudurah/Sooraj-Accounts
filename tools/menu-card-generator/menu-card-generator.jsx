@@ -198,20 +198,21 @@ function renderCard(text, fontSize, offsetY, offsetX = 0) {
 // cardCache: { [name]: dataUrl }
 async function renderA3Sheet(sheetPlan, cardCache) {
   const A3W = 3508, A3H = 4961;
-  const colW = Math.floor(A3W / 2);                         // 1754px per column
+  const GAP = 20; // ~1.7mm at 300 DPI — gap between cards and from left edge
 
-  // Left: 4 landscape cards filling column width
-  const leftCardW  = colW;                                   // 1754px
-  const leftCardH  = Math.round(leftCardW * CH / CW);       // ≈1169px
-  const leftTotalH = 4 * leftCardH;                         // ≈4676px
-  const topMargin  = Math.floor((A3H - leftTotalH) / 2);   // ≈143px
+  // Left: 4 landscape cards at exact render size (CW×CH = 1800×1200)
+  const leftX      = GAP;
+  const leftCardW  = CW;                                     // 1800px exact
+  const leftCardH  = CH;                                     // 1200px exact
+  const leftTotalH = 4 * leftCardH + 3 * GAP;              // 4860px
+  const leftTopY   = Math.floor((A3H - leftTotalH) / 2);   // ~50px
 
-  // Right: 2 portrait cards (original CW×CH landscape, appears rotated 90° CCW)
-  // Scale so each cell height = 2× leftCardH, maintaining aspect ratio
-  const rightDH    = 2 * leftCardH;                         // ≈2338px cell height
-  const rightScale = rightDH / CW;                          // ≈1.299
-  const rightDW    = Math.round(CH * rightScale);           // ≈1559px cell width
-  const rightX     = colW + Math.floor((colW - rightDW) / 2); // centered in right col ≈1852px
+  // Right: 2 cards rotated 90° CCW → visual size CH×CW (1200×1800)
+  const rightX      = GAP + CW + GAP;                       // 1840px
+  const rightCardW  = CH;                                    // 1200px visual width
+  const rightCardH  = CW;                                    // 1800px visual height
+  const rightTotalH = 2 * rightCardH + GAP;                 // 3620px
+  const rightTopY   = Math.floor((A3H - rightTotalH) / 2);  // ~670px
 
   const canvas = document.createElement("canvas");
   canvas.width = A3W; canvas.height = A3H;
@@ -224,8 +225,7 @@ async function renderA3Sheet(sheetPlan, cardCache) {
     const img = new Image();
     img.onload = () => {
       if (rotated) {
-        // ctx.rotate(+π/2) with translate(dx+dw, dy) → image appears rotated 90° CCW visually
-        // img x-axis maps to canvas y (downward), img y-axis maps to canvas -x (leftward)
+        // rotate(+π/2) + translate(dx+dw, dy) → appears 90° CCW; drawImage swaps w/h for 1:1 scale
         ctx.save();
         ctx.translate(dx + dw, dy);
         ctx.rotate(Math.PI / 2);
@@ -240,10 +240,10 @@ async function renderA3Sheet(sheetPlan, cardCache) {
   });
 
   for (let i = 0; i < 4; i++) {
-    await draw(sheetPlan.left[i], 0, topMargin + i * leftCardH, leftCardW, leftCardH, false);
+    await draw(sheetPlan.left[i], leftX, leftTopY + i * (leftCardH + GAP), leftCardW, leftCardH, false);
   }
   for (let i = 0; i < 2; i++) {
-    await draw(sheetPlan.right[i], rightX, topMargin + i * rightDH, rightDW, rightDH, true);
+    await draw(sheetPlan.right[i], rightX, rightTopY + i * (rightCardH + GAP), rightCardW, rightCardH, true);
   }
 
   return canvas.toDataURL("image/jpeg", 0.95);
