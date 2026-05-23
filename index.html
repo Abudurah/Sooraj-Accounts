@@ -933,7 +933,7 @@ function App(){
   };
   const saveEx=async newArr=>{
     const old=ref.current.expenses;setExpenses(newArr);
-    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EXPENSES_COL.doc(e.id));});newArr.forEach(e=>{const p=old.find(x=>x.id===e.id);if(!p||JSON.stringify(p)!==JSON.stringify(e))b.set(EXPENSES_COL.doc(e.id),e);});await b.commit();}catch(e){console.error(e);setExpenses(old);withUndo("Save failed — check your connection.",null);}
+    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EXPENSES_COL.doc(e.id));});newArr.forEach(e=>{const p=old.find(x=>x.id===e.id);if(!p||JSON.stringify(p)!==JSON.stringify(e))b.set(EXPENSES_COL.doc(e.id),e);});await b.commit();}catch(err){console.error("saveEx failed:",err?.code,err);setExpenses(old);const msg=err?.code==="permission-denied"?"Save failed — permission denied. Contact admin.":err?.code==="resource-exhausted"?"Save failed — daily write quota exceeded.":"Save failed — check your connection.";withUndo(msg,null);}
   };
 
   const isMob=bp==="mobile";
