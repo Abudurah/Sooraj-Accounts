@@ -557,7 +557,8 @@ function ExpensesTab({expenses,events,income,onSave,withUndo,bp,addTrigger}){
     onSave([...newOnes,...expenses]);
   };
 
-  const visExpenses=search?expenses.filter(x=>{const q=search.toLowerCase();return(x.note||"").toLowerCase().includes(q)||x.category.toLowerCase().includes(q)||gch(x.channel).name.toLowerCase().includes(q);}):expenses;
+  const sortedExpenses=[...expenses].sort((a,b)=>{if(b.date>a.date)return 1;if(b.date<a.date)return -1;return b.id>a.id?1:-1;});
+  const visExpenses=search?sortedExpenses.filter(x=>{const q=search.toLowerCase();return(x.note||"").toLowerCase().includes(q)||x.category.toLowerCase().includes(q)||gch(x.channel).name.toLowerCase().includes(q);}):sortedExpenses;
   const list=(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -933,7 +934,7 @@ function App(){
   };
   const saveEx=async newArr=>{
     const old=ref.current.expenses;setExpenses(newArr);
-    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EXPENSES_COL.doc(e.id));});newArr.forEach(e=>{const p=old.find(x=>x.id===e.id);if(!p||JSON.stringify(p)!==JSON.stringify(e))b.set(EXPENSES_COL.doc(e.id),e);});await b.commit();}catch(e){console.error(e);setExpenses(old);withUndo("Save failed — check your connection.",null);}
+    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EXPENSES_COL.doc(e.id));});newArr.forEach(e=>{const p=old.find(x=>x.id===e.id);if(!p||JSON.stringify(p)!==JSON.stringify(e))b.set(EXPENSES_COL.doc(e.id),e);});await b.commit();}catch(e){console.error(e);/* Do NOT rollback here — the write may have succeeded despite the error. Firestore onSnapshot will restore the correct state. Silently rolling back caused duplicate entries. */withUndo("Save failed — retrying…",null);}
   };
 
   const isMob=bp==="mobile";
