@@ -4,7 +4,10 @@
       "Bash(gh api *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "PowerShell($f = \"c:\\\\Users\\\\abudu\\\\Documents\\\\Sooraj Accounts\\\\tools\\\\menu-card-generator\\\\menu-card-generator.jsx\"; $item = Get-Item $f; \"Size: $\\([math]::Round\\($item.Length/1MB, 2\\)\\) MB\"; $lines = \\(Get-Content $f | Measure-Object -Line\\).Lines; \"Lines: $lines\")",
+      "PowerShell($lines = Get-Content \"c:\\\\Users\\\\abudu\\\\Documents\\\\Sooraj Accounts\\\\tools\\\\menu-card-generator\\\\menu-card-generator.jsx\"; \"Total lines: $\\($lines.Count\\)\"; \"\"; \"--- First 5 lines ---\"; $lines[0..4]; \"\"; \"--- Lines around TEMPLATE_B64 ---\"; $lines[0]; $lines[1].Substring\\(0,[Math]::Min\\(80,$lines[1].Length\\)\\) + \"...[base64 truncated]\"; \"\"; \"--- Lines 2 to end ---\"; $lines[2..$lines.Count])",
+      "PowerShell($lines = Get-Content \"c:\\\\Users\\\\abudu\\\\Documents\\\\Sooraj Accounts\\\\tools\\\\menu-card-generator\\\\menu-card-generator.jsx\"; $i = 0; foreach \\($line in $lines\\) { $i++; if \\($line.Length -lt 300\\) { Write-Output \"$i`: $line\" } else { Write-Output \"$i`: [... long line: $\\($line.Length\\) chars ...]\" } })"
     ]
   }
 }

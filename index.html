@@ -854,7 +854,7 @@ function App(){
   const commitUndo=()=>{
     if(!undoPending)return;
     clearTimeout(undoTimerRef.current);
-    undoPending.restore();
+    if(undoPending.restore)undoPending.restore();
     setUndoPending(null);
   };
   useEffect(()=>{ref.current={events,income,expenses};},[events,income,expenses]);
@@ -925,15 +925,15 @@ function App(){
 
   const saveEv=async newArr=>{
     const old=ref.current.events;setEvents(newArr);
-    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EVENTS_COL.doc(e.id));});newArr.forEach(e=>b.set(EVENTS_COL.doc(e.id),e));await b.commit();}catch(e){console.error(e);}
+    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EVENTS_COL.doc(e.id));});newArr.forEach(e=>{const p=old.find(x=>x.id===e.id);if(!p||JSON.stringify(p)!==JSON.stringify(e))b.set(EVENTS_COL.doc(e.id),e);});await b.commit();}catch(e){console.error(e);setEvents(old);withUndo("Save failed — check your connection.",null);}
   };
   const saveIn=async newArr=>{
     const old=ref.current.income;setIncome(newArr);
-    try{const b=fsdb.batch();old.forEach(i=>{if(!newArr.find(x=>x.id===i.id))b.delete(INCOME_COL.doc(i.id));});newArr.forEach(i=>b.set(INCOME_COL.doc(i.id),i));await b.commit();}catch(e){console.error(e);}
+    try{const b=fsdb.batch();old.forEach(i=>{if(!newArr.find(x=>x.id===i.id))b.delete(INCOME_COL.doc(i.id));});newArr.forEach(i=>{const p=old.find(x=>x.id===i.id);if(!p||JSON.stringify(p)!==JSON.stringify(i))b.set(INCOME_COL.doc(i.id),i);});await b.commit();}catch(e){console.error(e);setIncome(old);withUndo("Save failed — check your connection.",null);}
   };
   const saveEx=async newArr=>{
     const old=ref.current.expenses;setExpenses(newArr);
-    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EXPENSES_COL.doc(e.id));});newArr.forEach(e=>b.set(EXPENSES_COL.doc(e.id),e));await b.commit();}catch(e){console.error(e);}
+    try{const b=fsdb.batch();old.forEach(e=>{if(!newArr.find(x=>x.id===e.id))b.delete(EXPENSES_COL.doc(e.id));});newArr.forEach(e=>{const p=old.find(x=>x.id===e.id);if(!p||JSON.stringify(p)!==JSON.stringify(e))b.set(EXPENSES_COL.doc(e.id),e);});await b.commit();}catch(e){console.error(e);setExpenses(old);withUndo("Save failed — check your connection.",null);}
   };
 
   const isMob=bp==="mobile";
@@ -1025,9 +1025,9 @@ function App(){
         </nav>
       )}
       {undoPending&&(
-        <div style={{position:"fixed",bottom:isMob?78:24,left:"50%",transform:"translateX(-50%)",background:C.primary,color:"#F6F2EA",borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:14,zIndex:1000,boxShadow:"0 4px 24px rgba(0,0,0,0.35)",whiteSpace:"nowrap"}}>
+        <div style={{position:"fixed",bottom:isMob?78:24,left:"50%",transform:"translateX(-50%)",background:undoPending.restore?C.primary:C.red,color:"#F6F2EA",borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:14,zIndex:1000,boxShadow:"0 4px 24px rgba(0,0,0,0.35)",whiteSpace:"nowrap"}}>
           <span style={{fontSize:13}}>{undoPending.label}</span>
-          <button onClick={commitUndo} style={{background:C.accent,color:C.primary,border:"none",borderRadius:7,padding:"6px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Undo</button>
+          {undoPending.restore&&<button onClick={commitUndo} style={{background:C.accent,color:C.primary,border:"none",borderRadius:7,padding:"6px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Undo</button>}
         </div>
       )}
     </div>
