@@ -557,7 +557,7 @@ function ExpensesTab({expenses,events,income,onSave,withUndo,bp,addTrigger}){
     onSave([...newOnes,...expenses]);
   };
 
-  const visExpenses=search?expenses.filter(x=>{const q=search.toLowerCase();return(x.note||"").toLowerCase().includes(q)||x.category.toLowerCase().includes(q)||gch(x.channel).name.toLowerCase().includes(q);}):expenses;
+  const visExpenses=(search?expenses.filter(x=>{const q=search.toLowerCase();return(x.note||"").toLowerCase().includes(q)||x.category.toLowerCase().includes(q)||gch(x.channel).name.toLowerCase().includes(q);}):expenses).slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const list=(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
