@@ -1,7 +1,7 @@
 const CACHE = 'sooraj-v9';
 const CDN_CACHE = 'sooraj-cdn-v1';
 const FILES = ['/Sooraj-Accounts/', '/Sooraj-Accounts/index.html', '/Sooraj-Accounts/icon.png'];
-const CDN_HOSTS = ['gstatic.com', 'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+const CDN_HOSTS = ['gstatic.com', 'unpkg.com', 'jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); });
 self.addEventListener('activate', e => { e.waitUntil(clients.claim().then(() => caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== CDN_CACHE).map(k => caches.delete(k)))))); });
