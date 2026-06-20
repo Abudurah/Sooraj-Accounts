@@ -36,14 +36,16 @@
 </head>
 <body>
 <div id="root"></div>
-<div id="fallback" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#F0EBE1;gap:10px;padding:24px;text-align:center;font-family:sans-serif;">
+<div id="fallback" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#F0EBE1;gap:10px;padding:24px;text-align:center;font-family:sans-serif;">
   <div style="font-size:32px">☕</div>
   <div style="font-size:18px;font-weight:700;color:#182F24">Sooraj Caterers</div>
-  <div style="font-size:13px;color:#7A7060;max-width:280px;line-height:1.6">Loading… if this takes more than 10 seconds, please check your internet connection and reload.</div>
+  <div id="fallback-msg" style="font-size:13px;color:#7A7060;max-width:280px;line-height:1.6">Loading…</div>
+  <button id="fallback-reload" onclick="location.reload(true)" style="display:none;margin-top:8px;padding:10px 24px;border:none;border-radius:9px;background:#182F24;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Reload</button>
 </div>
 <script>
-  // Hide fallback as soon as React mounts something into #root
   var _fb = document.getElementById('fallback');
+  var _msg = document.getElementById('fallback-msg');
+  var _btn = document.getElementById('fallback-reload');
   var _obs = new MutationObserver(function() {
     if (document.getElementById('root').children.length > 0) {
       _fb.style.display = 'none';
@@ -51,8 +53,13 @@
     }
   });
   _obs.observe(document.getElementById('root'), { childList: true });
-  // Safety timeout — hide after 30s even if React never mounts
-  setTimeout(function() { _obs.disconnect(); }, 30000);
+  // After 8s without React mounting, show a reload prompt
+  setTimeout(function() {
+    if (_fb.style.display !== 'none') {
+      _msg.textContent = 'Taking too long — this usually means a connection problem.';
+      _btn.style.display = 'inline-block';
+    }
+  }, 8000);
 </script>
 <script type="text/babel">
 
@@ -911,7 +918,8 @@ function App(){
 
   useEffect(()=>{
     const unsub=firebase.auth().onAuthStateChanged(u=>{setUser(u);setAuthLoading(false);});
-    return()=>unsub();
+    const t=setTimeout(()=>setAuthLoading(false),10000);
+    return()=>{unsub();clearTimeout(t);};
   },[]);
 
   useEffect(()=>{
