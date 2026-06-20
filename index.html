@@ -17,7 +17,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
   <style>
     *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
     html,body,#root{height:100%;}
@@ -36,6 +36,17 @@
 </head>
 <body>
 <div id="root"></div>
+<div id="splash" style="position:fixed;inset:0;background:#F0EBE1;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:10px;">
+  <div style="font-family:'Playfair Display',Georgia,serif;font-size:24px;font-weight:700;color:#182F24">Sooraj Caterers</div>
+  <div style="font-size:12px;color:#7A7060;font-family:sans-serif">Loading…</div>
+</div>
+<script>
+  window.onerror = function() {
+    var s = document.getElementById('splash');
+    if (!s) return;
+    s.innerHTML = '<div style="font-family:Georgia,serif;font-size:22px;font-weight:700;color:#182F24;margin-bottom:12px">Sooraj Caterers</div><div style="font-size:13px;color:#A83228;text-align:center;padding:0 28px;line-height:1.7;font-family:sans-serif">Failed to load. Please check your internet connection and try again.</div><button onclick="location.reload()" style="margin-top:20px;padding:11px 28px;background:#182F24;color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:sans-serif">Retry</button>';
+  };
+</script>
 <script type="text/babel">
 
 // ════════════════════════════════════════════════════════
@@ -846,6 +857,7 @@ function App(){
   const[expTrigger,setExpTrigger]=useState(0);
   const ref=useRef({events,income,expenses});
   const lastScrollY=useRef(0);
+  useEffect(()=>{ document.getElementById('splash')?.remove(); },[]);
   const undoTimerRef=useRef(null);
   const withUndo=(label,restoreFn)=>{
     if(undoTimerRef.current)clearTimeout(undoTimerRef.current);
