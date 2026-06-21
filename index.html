@@ -117,7 +117,8 @@ const TABS=[{id:"income",icon:"💰",label:"Income"},{id:"expenses",icon:"💸",
 
 const INR  =n=>"₹"+Number(n||0).toLocaleString("en-IN");
 const uid  =()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-const today=()=>new Date().toISOString().split("T")[0];
+const today=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;};
+const localDateStr=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const fmtDt=s=>{if(!s)return"";const[y,m,d]=s.split("-");return`${d} ${MOS[+m-1]} ${y}`;};
 const fmtMo=s=>{if(!s)return"";const[y,m]=s.split("-");return`${MOS[+m-1]} ${y}`;};
 const isOvd=s=>s&&s<today();
@@ -140,7 +141,7 @@ function getMonthlyData(events,income,expenses){
   });
 }
 
-function exportReport(mode,events,income,expenses){
+function exportReport(mode,events,income,expenses,rangeLabel="All Time"){
   const d=new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"});
   const evtRec=events.reduce((s,e)=>s+e.payments.reduce((p,r)=>p+r.amount,0),0);
   const logRec=income.reduce((s,i)=>s+i.amount,0);
@@ -157,7 +158,7 @@ function exportReport(mode,events,income,expenses){
   if(mode==="full"&&income.length){body+=`<h2>Quick Income Log</h2><table><tr><th>Type</th><th>Channel</th><th>Date</th><th>Note</th><th>Amount</th></tr>`;income.forEach(i=>{body+=`<tr><td>${pt(i.payType).label}</td><td>${gch(i.channel).name}</td><td>${fmtDt(i.date)}</td><td>${i.note||"—"}</td><td class="g">${INR(i.amount)}</td></tr>`;});body+=`</table>`;}
   const modeLabel=mode==="summary"?"Summary Only":mode==="standard"?"Standard Report":"Full Detail";
   const win=window.open("","_blank");
-  win.document.write(`<!DOCTYPE html><html><head><title>Sooraj Caterers Report</title><style>${css}</style></head><body><h1>Sooraj Caterers & Events</h1><div class="sub">Account Report · ${modeLabel}</div><div class="dt">Generated ${d}</div>${body}<div style="color:#ccc;font-size:10px;text-align:center;margin-top:32px">Sooraj Caterers & Events – Est. 1989 · Calicut, Kerala</div></body></html>`);
+  win.document.write(`<!DOCTYPE html><html><head><title>Sooraj Caterers Report</title><style>${css}</style></head><body><h1>Sooraj Caterers & Events</h1><div class="sub">Account Report · ${modeLabel} · ${rangeLabel}</div><div class="dt">Generated ${d}</div>${body}<div style="color:#ccc;font-size:10px;text-align:center;margin-top:32px">Sooraj Caterers & Events – Est. 1989 · Calicut, Kerala</div></body></html>`);
   win.document.close();setTimeout(()=>win.print(),600);
 }
 
@@ -715,22 +716,23 @@ function SummaryTab({events,income,expenses,bp}){
   const[rangeFilter,setRangeFilter]=useState("all");
 
   const RANGE_OPTS=[{id:"all",label:"All Time"},{id:"month",label:"This Month"},{id:"q3",label:"Last 3 Mo."},{id:"year",label:"This Year"}];
-  const cutoff=(()=>{const now=new Date();if(rangeFilter==="month")return new Date(now.getFullYear(),now.getMonth(),1).toISOString().split("T")[0];if(rangeFilter==="q3"){const d=new Date(now);d.setMonth(d.getMonth()-3);return d.toISOString().split("T")[0];}if(rangeFilter==="year")return`${now.getFullYear()}-01-01`;return null;})();
+  const cutoff=(()=>{const now=new Date();if(rangeFilter==="month")return localDateStr(new Date(now.getFullYear(),now.getMonth(),1));if(rangeFilter==="q3"){const d=new Date(now);d.setMonth(d.getMonth()-3);return localDateStr(d);}if(rangeFilter==="year")return`${now.getFullYear()}-01-01`;return null;})();
   const inRange=date=>!cutoff||(date&&date>=cutoff);
 
   const rEvents=events.map(e=>({...e,payments:e.payments.filter(p=>inRange(p.date))}));
   const rIncome=income.filter(i=>inRange(i.date));
   const rExpenses=expenses.filter(e=>inRange(e.date));
+  const rBilled=rangeFilter==="all"?events:events.filter(e=>inRange(e.date));
 
   const evtRec=rEvents.reduce((s,e)=>s+e.payments.reduce((p,r)=>p+r.amount,0),0);
   const logRec=rIncome.reduce((s,i)=>s+i.amount,0);
-  const billed=events.reduce((s,e)=>s+(e.totalBill||0),0);
-  const allEvtRec=events.reduce((s,e)=>s+e.payments.reduce((p,r)=>p+r.amount,0),0);
+  const billed=rBilled.reduce((s,e)=>s+(e.totalBill||0),0);
+  const allEvtRec=rBilled.reduce((s,e)=>s+e.payments.reduce((p,r)=>p+r.amount,0),0);
   const totalExp=rExpenses.reduce((s,e)=>s+e.amount,0);
   const outstd=billed-allEvtRec;
   const net=(evtRec+logRec)-totalExp;
   const rate=billed?((allEvtRec/billed)*100).toFixed(0):0;
-  const unpaid=events.filter(e=>{const r=e.payments.reduce((s,p)=>s+p.amount,0);return r<e.totalBill;});
+  const unpaid=rBilled.filter(e=>{const r=e.payments.reduce((s,p)=>s+p.amount,0);return r<e.totalBill;});
   const monthly=getMonthlyData(rEvents,rIncome,rExpenses);
   const maxMo=Math.max(...monthly.map(m=>Math.max(m.mIn,m.mOut)),1);
   const copyWA=()=>{const d=new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});let t=`*Sooraj Caterers & Events*\n📊 Account Summary – ${d}\n\nTotal Billed: ${INR(billed)}\nCollected (Events): ${INR(evtRec)} (${rate}%)\nQuick Log Income: ${INR(logRec)}\nOutstanding: ${INR(outstd)}\nTotal Expenses: ${INR(totalExp)}\n*Net Position: ${INR(net)}*\n`;if(unpaid.length){t+=`\n📌 Pending:\n`;unpaid.forEach(e=>{const r=e.payments.reduce((s,p)=>s+p.amount,0);t+=`• ${e.name} (${e.customer}) – ${INR(e.totalBill-r)} due\n`;});}navigator.clipboard.writeText(t).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);}).catch(()=>{});};
@@ -762,7 +764,7 @@ function SummaryTab({events,income,expenses,bp}){
       </div>
 
       <Card>
-        {[{lbl:"Total Events",val:events.length,co:C.text},{lbl:"Fully Paid",val:events.length-unpaid.length,co:C.green},{lbl:"Pending Payment",val:unpaid.length,co:C.red},{lbl:"Outstanding",val:INR(outstd),co:C.red}].map(it=>(
+        {[{lbl:"Total Events",val:rBilled.length,co:C.text},{lbl:"Fully Paid",val:rBilled.length-unpaid.length,co:C.green},{lbl:"Pending Payment",val:unpaid.length,co:C.red},{lbl:"Outstanding",val:INR(outstd),co:C.red}].map(it=>(
           <div key={it.lbl} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
             <span style={{fontSize:13,color:C.muted}}>{it.lbl}</span>
             <span style={{fontSize:14,fontWeight:700,color:it.co}}>{it.val}</span>
@@ -830,7 +832,7 @@ function SummaryTab({events,income,expenses,bp}){
             {id:"standard",icon:"📊",label:"Standard Report",desc:"Summary + monthly breakdown + all events + expenses by category."},
             {id:"full",icon:"📁",label:"Full Detail",desc:"Everything — every payment, log entry, and expense with all fields."},
           ].map(m=>(
-            <button key={m.id} onClick={()=>{exportReport(m.id,events,income,expenses);setExportModal(false);}} style={{width:"100%",padding:"14px 16px",borderRadius:11,border:`1.5px solid ${C.border}`,background:C.surface,cursor:"pointer",textAlign:"left",marginBottom:10,display:"flex",gap:14,alignItems:"center"}}>
+            <button key={m.id} onClick={()=>{exportReport(m.id,rEvents,rIncome,rExpenses,RANGE_OPTS.find(r=>r.id===rangeFilter)?.label||"All Time");setExportModal(false);}} style={{width:"100%",padding:"14px 16px",borderRadius:11,border:`1.5px solid ${C.border}`,background:C.surface,cursor:"pointer",textAlign:"left",marginBottom:10,display:"flex",gap:14,alignItems:"center"}}>
               <span style={{fontSize:26}}>{m.icon}</span>
               <div><div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:2}}>{m.label}</div><div style={{fontSize:12,color:C.muted}}>{m.desc}</div></div>
             </button>
