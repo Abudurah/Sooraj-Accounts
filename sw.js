@@ -1,4 +1,4 @@
-const CACHE = 'sooraj-v9';
+const CACHE = 'sooraj-v10';
 const CDN_CACHE = 'sooraj-cdn-v1';
 const FILES = ['/Sooraj-Accounts/', '/Sooraj-Accounts/index.html', '/Sooraj-Accounts/icon.png'];
 const CDN_HOSTS = ['gstatic.com', 'unpkg.com', 'jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
