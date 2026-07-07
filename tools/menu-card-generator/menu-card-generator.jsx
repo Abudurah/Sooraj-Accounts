@@ -156,36 +156,70 @@ function renderCard(text, fontSize, offsetY, offsetX = 0) {
     // We store fontSize as the actual px value for the 1800px canvas already
     const draw = () => {
       ctx.drawImage(templateImage, 0, 0, CW, CH);
-
-      ctx.font = `400 ${fontSize}px 'Closia', 'Century Gothic', sans-serif`;
-      ctx.fillStyle = "#1a1000";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-
-      const centerX = CW / 2 + (offsetX / 100) * CW * 0.35;
-      const centerY = CH / 2 + (offsetY / 100) * CH * 0.35;
-      const areaW = CW * 0.80;
-
-      const maxW = areaW * 0.92;
-      const words = text.toUpperCase().split(" ");
-      const lines = []; let line = "";
-      for (const word of words) {
-        const test = line ? line + " " + word : word;
-        if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = word; }
-        else line = test;
-      }
-      if (line) lines.push(line);
-
-      const lh = fontSize * 1.18;
-      const totalH = lines.length * lh;
-      lines.forEach((l, i) => {
-        ctx.fillText(l, centerX, centerY - totalH / 2 + i * lh + lh / 2, maxW);
-      });
-
+      drawCardText(ctx, text, fontSize, offsetY, offsetX, CW, CH);
       resolve(canvas.toDataURL("image/jpeg", 0.97));
     };
 
     const go = () => document.fonts.load(`400 ${fontSize}px 'Closia'`).then(draw).catch(draw);
+    if (templateImage.complete && templateImage.naturalWidth > 0) go();
+    else templateImage.onload = go;
+  });
+}
+
+// Draw the dish name centered on a W×H card (shared by card + strip renderers)
+function drawCardText(ctx, text, fontSize, offsetY, offsetX, W, H) {
+  ctx.font = `400 ${fontSize}px 'Closia', 'Century Gothic', sans-serif`;
+  ctx.fillStyle = "#1a1000";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const centerX = W / 2 + (offsetX / 100) * W * 0.35;
+  const centerY = H / 2 + (offsetY / 100) * H * 0.35;
+  const areaW = W * 0.80;
+
+  const maxW = areaW * 0.92;
+  const words = text.toUpperCase().split(" ");
+  const lines = []; let line = "";
+  for (const word of words) {
+    const test = line ? line + " " + word : word;
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = word; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+
+  const lh = fontSize * 1.18;
+  const totalH = lines.length * lh;
+  lines.forEach((l, i) => {
+    ctx.fillText(l, centerX, centerY - totalH / 2 + i * lh + lh / 2, maxW);
+  });
+}
+
+// ── VERTICAL STRIP 825×2550 ──────────────────────────
+// The card artwork is drawn rotated 90° inside the portrait strip: logical
+// card = 2550×825 landscape, readable when the strip is turned sideways.
+// Far less distortion than stretching the 3:2 art onto a 1:3 canvas.
+const STRIP_W = 825, STRIP_H = 2550;
+function renderStripCard(text, fontSize, offsetY, offsetX = 0) {
+  return new Promise((resolve) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = STRIP_W; canvas.height = STRIP_H;
+    const ctx = canvas.getContext("2d");
+
+    const LW = STRIP_H, LH = STRIP_W;  // logical landscape card: 2550×825
+    const fs = fontSize * (LH / CH);   // keep text proportional to card height
+
+    const draw = () => {
+      // rotate 90° CW so logical x runs down the strip
+      ctx.save();
+      ctx.translate(STRIP_W, 0);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(templateImage, 0, 0, LW, LH);
+      drawCardText(ctx, text, fs, offsetY, offsetX, LW, LH);
+      ctx.restore();
+      resolve(canvas.toDataURL("image/jpeg", 0.97));
+    };
+
+    const go = () => document.fonts.load(`400 ${fs}px 'Closia'`).then(draw).catch(draw);
     if (templateImage.complete && templateImage.naturalWidth > 0) go();
     else templateImage.onload = go;
   });
@@ -249,9 +283,12 @@ async function renderA3Sheet(sheetPlan, cardCache) {
 }
 
 // ── EXPORT MODAL ─────────────────────────────────────
-function ExportModal({ items, ov, gfs, goy, gox = 0, onClose }) {
+// strip=false → 1800×1200 cards; strip=true → 825×2550 rotated strips
+function ExportModal({ items, ov, gfs, goy, gox = 0, strip = false, onClose }) {
   const [cards, setCards] = useState([]);
   const [done,  setDone]  = useState(false);
+
+  const sizeLabel = strip ? "825 × 2550 px" : "1800 × 1200 px";
 
   useEffect(() => {
     let cancelled = false;
@@ -262,7 +299,7 @@ function ExportModal({ items, ov, gfs, goy, gox = 0, onClose }) {
         const fs = ov[item]?.fontSize ?? gfs;
         const oy = ov[item]?.offsetY  ?? goy;
         const ox = ov[item]?.offsetX  ?? gox;
-        const dataUrl = await renderCard(item, fs, oy, ox);
+        const dataUrl = await (strip ? renderStripCard : renderCard)(item, fs, oy, ox);
         if (cancelled) return;
         results.push({ name: item, dataUrl });
         setCards([...results]);
@@ -282,7 +319,7 @@ function ExportModal({ items, ov, gfs, goy, gox = 0, onClose }) {
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "menu-cards.zip"; a.click();
+    a.href = url; a.download = strip ? "menu-strips.zip" : "menu-cards.zip"; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -300,7 +337,7 @@ function ExportModal({ items, ov, gfs, goy, gox = 0, onClose }) {
         <div>
           <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>
             {done
-              ? `✓ ${items.length} card${items.length > 1 ? "s" : ""} ready — 1800×1200 px (6×4 in @ 300 DPI)`
+              ? `✓ ${items.length} ${strip ? "strip" : "card"}${items.length > 1 ? "s" : ""} ready — ${strip ? "825×2550 px (2.75×8.5 in @ 300 DPI)" : "1800×1200 px (6×4 in @ 300 DPI)"}`
               : `Rendering… ${cards.length} / ${items.length}`}
           </div>
           <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>
@@ -337,14 +374,16 @@ function ExportModal({ items, ov, gfs, goy, gox = 0, onClose }) {
           <div key={name} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ position: "relative" }}>
               <img src={dataUrl} alt={name}
-                style={{ width: 480, height: 320, objectFit: "cover", borderRadius: 4, display: "block" }} />
+                style={strip
+                  ? { width: 155, height: 480, objectFit: "cover", borderRadius: 4, display: "block" }
+                  : { width: 480, height: 320, objectFit: "cover", borderRadius: 4, display: "block" }} />
               <div style={{
                 position: "absolute", bottom: 6, right: 8,
                 background: "rgba(0,0,0,0.55)", color: "#aaa",
                 fontSize: 9, padding: "2px 6px", borderRadius: 3,
-              }}>1800 × 1200 px</div>
+              }}>{sizeLabel}</div>
             </div>
-            <a href={dataUrl} download={`${slug(name)}.jpg`} className="save-link" style={{ width: 480 }}>
+            <a href={dataUrl} download={`${slug(name)}.jpg`} className="save-link" style={{ width: strip ? 155 : 480 }}>
               ⬇ &nbsp;Save — {name}
             </a>
           </div>
@@ -671,6 +710,7 @@ export default function App() {
   const [winW,      setWinW]     = useState(window.innerWidth);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 720);
   const [a3Exporting, setA3Exporting] = useState(false);
+  const [stripExporting, setStripExporting] = useState(false);
 
   useEffect(() => {
     const onResize = () => {
@@ -704,6 +744,9 @@ export default function App() {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       {exporting && (
         <ExportModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setExporting(false)} />
+      )}
+      {stripExporting && (
+        <ExportModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} strip onClose={() => setStripExporting(false)} />
       )}
       {a3Exporting && (
         <A3Modal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
@@ -830,6 +873,25 @@ export default function App() {
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
           Exports at <strong style={{color:"#3a5070"}}>1800 × 1200 px</strong><br />
           6 × 4 inches @ 300 DPI — print-ready
+        </div>
+
+        <div style={{ borderTop: "1px solid #0e1c30" }} />
+
+        <button className="mcg-btn"
+          onClick={() => setStripExporting(true)}
+          disabled={items.length === 0}
+          style={{
+            background: "#0b1727", color: items.length > 0 ? "#c4a35a" : "#1e3050",
+            border: `1px solid ${items.length > 0 ? "#c4a35a55" : "#0e1c30"}`,
+            borderRadius: 8, padding: "13px", fontSize: 13,
+            fontWeight: "bold", letterSpacing: "0.05em",
+            cursor: items.length > 0 ? "pointer" : "not-allowed",
+          }}>
+          ⬇ &nbsp;Export Strips ({items.length})
+        </button>
+        <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
+          Exports at <strong style={{color:"#3a5070"}}>825 × 2550 px</strong><br />
+          2.75 × 8.5 inches @ 300 DPI — card rotated 90°
         </div>
 
         <div style={{ borderTop: "1px solid #0e1c30" }} />
