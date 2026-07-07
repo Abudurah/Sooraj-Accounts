@@ -10,6 +10,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+        navigateFallbackDenylist: [/tools\/menu-card-generator/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
