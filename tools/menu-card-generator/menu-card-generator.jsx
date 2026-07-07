@@ -68,7 +68,7 @@ const CW = 1800, CH = 1200;
 const templateImage = new Image();
 templateImage.src = TEMPLATE_B64;
 
-function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides = false, cardW = CW, cardH = CH, fontScale = 1 }) {
+function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides = false, cardW = CW, cardH = CH, fontScale = 1, bg = TEMPLATE_B64 }) {
   const shiftPx  = (offsetY / 100) * cardH * scale * 0.35;
   const shiftXPx = (offsetX / 100) * cardW * scale * 0.35;
   const dxPct = Math.round(offsetX * 0.35);
@@ -78,7 +78,7 @@ function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides 
       position: "relative", width: cardW * scale, height: cardH * scale,
       flexShrink: 0, boxShadow: "0 12px 48px rgba(0,0,0,0.55)", overflow: "hidden",
     }}>
-      <img src={TEMPLATE_B64} alt="" draggable={false}
+      <img src={bg} alt="" draggable={false}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }} />
       <div style={{
         position: "absolute", top: 0, bottom: 0, left: "10%", right: "10%",
@@ -195,27 +195,44 @@ function drawCardText(ctx, text, fontSize, offsetY, offsetX, W, H) {
 }
 
 // ── VERTICAL STRIP 825×2550 ──────────────────────────
-// The card artwork is drawn rotated 90° inside the portrait strip: logical
-// card = 2550×825 landscape, readable when the strip is turned sideways.
-// Far less distortion than stretching the 3:2 art onto a 1:3 canvas.
+// Portrait strip, upright text, no rotation. The 6×4 art can't be stretched
+// to 1:3 without warping the leaves/logo, so the background is rebuilt from
+// four pieces: each half keeps its decorated corners at natural proportions
+// and stretches only its own clean cream band (verified decoration-free in
+// the source art: left half y 440–530, right half y 700–790) to fill the
+// height. The gold frame lines run through both bands, so they stay intact.
 const STRIP_W = 825, STRIP_H = 2550;
+let stripTemplateCache = null;
+function getStripTemplate() {
+  if (stripTemplateCache) return stripTemplateCache;
+  const c = document.createElement("canvas");
+  c.width = STRIP_W; c.height = STRIP_H;
+  const ctx = c.getContext("2d");
+  const s = STRIP_W / CW;
+  const X = 900, DX = Math.round(X * s); // source / dest column split
+  const half = (sx, sw, dx, dw, y1, y2) => { // y1..y2 = clean band to stretch
+    const top = Math.round(y1 * s), bot = Math.round((CH - y2) * s);
+    ctx.drawImage(templateImage, sx, 0,  sw, y1,      dx, 0,             dw, top);
+    ctx.drawImage(templateImage, sx, y1, sw, y2 - y1, dx, top,           dw, STRIP_H - top - bot);
+    ctx.drawImage(templateImage, sx, y2, sw, CH - y2, dx, STRIP_H - bot, dw, bot);
+  };
+  half(0, X, 0, DX, 440, 530);                  // left: leaves + logo below the band
+  half(X, CW - X, DX, STRIP_W - DX, 700, 790);  // right: leaves + fir above the band
+  stripTemplateCache = c;
+  return c;
+}
+
 function renderStripCard(text, fontSize, offsetY, offsetX = 0) {
   return new Promise((resolve) => {
     const canvas = document.createElement("canvas");
     canvas.width = STRIP_W; canvas.height = STRIP_H;
     const ctx = canvas.getContext("2d");
 
-    const LW = STRIP_H, LH = STRIP_W;  // logical landscape card: 2550×825
-    const fs = fontSize * (LH / CH);   // keep text proportional to card height
+    const fs = fontSize * (STRIP_W / CW); // same size relative to width as the 6×4 card
 
     const draw = () => {
-      // rotate 90° CW so logical x runs down the strip
-      ctx.save();
-      ctx.translate(STRIP_W, 0);
-      ctx.rotate(Math.PI / 2);
-      ctx.drawImage(templateImage, 0, 0, LW, LH);
-      drawCardText(ctx, text, fs, offsetY, offsetX, LW, LH);
-      ctx.restore();
+      ctx.drawImage(getStripTemplate(), 0, 0);
+      drawCardText(ctx, text, fs, offsetY, offsetX, STRIP_W, STRIP_H);
       resolve(canvas.toDataURL("image/jpeg", 0.97));
     };
 
@@ -697,6 +714,312 @@ function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
   );
 }
 
+// ── STRIP SHEET MODAL (A4 / A3) ──────────────────────
+// Strips print upright, side by side. A4 portrait fits 3 (3×825 = 2475 ≤ 2480 px);
+// A3 landscape fits 6 (6×825 = 4950 ≤ 4961 px). Both sheets @ 300 DPI.
+const STRIP_PAPERS = {
+  a4: { name: "A4", W: 2480, H: 3508, slots: 3, desc: "A4 portrait — 3 strips" },
+  a3: { name: "A3", W: 4961, H: 3508, slots: 6, desc: "A3 landscape — 6 strips" },
+};
+
+async function renderStripSheet(names, cache, paper) {
+  const { W, H, slots } = STRIP_PAPERS[paper];
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+
+  const gap = Math.floor((W - slots * STRIP_W) / (slots + 1));
+  const y = Math.floor((H - STRIP_H) / 2);
+  for (let i = 0; i < slots; i++) {
+    const name = names[i];
+    if (!name || !cache[name]) continue;
+    const x = gap + i * (STRIP_W + gap);
+    await new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => { ctx.drawImage(img, x, y, STRIP_W, STRIP_H); resolve(); };
+      img.src = cache[name];
+    });
+  }
+  return canvas.toDataURL("image/jpeg", 0.95);
+}
+
+function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
+  const [paper,     setPaper]     = useState("a4");
+  const [phase,     setPhase]     = useState("planning");
+  const [plans,     setPlans]     = useState([Array(STRIP_PAPERS.a4.slots).fill(null)]);
+  const [openSlot,  setOpenSlot]  = useState(null); // { si, slot }
+  const [cards,     setCards]     = useState([]);
+  const [sheets,    setSheets]    = useState([]);
+  const [isMobileW, setIsMobileW] = useState(window.innerWidth < 600);
+
+  useEffect(() => {
+    const onResize = () => setIsMobileW(window.innerWidth < 600);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const P         = STRIP_PAPERS[paper];
+  const assigned  = new Set(plans.flat().filter(Boolean));
+  const canRender = plans.some(p => p.some(Boolean));
+  const totalCards = [...new Set(plans.flat().filter(Boolean))].length;
+
+  const switchPaper = (p) => {
+    if (p === paper) return;
+    setPaper(p);
+    setPlans([Array(STRIP_PAPERS[p].slots).fill(null)]);
+    setOpenSlot(null);
+  };
+
+  const setSlot = (si, slot, name) =>
+    setPlans(prev => prev.map((p, i) => (i === si ? p.map((v, j) => (j === slot ? name : v)) : p)));
+
+  const autoFill = (si) => {
+    const avail = items.filter(n => !assigned.has(n));
+    let ai = 0;
+    setPlans(prev => prev.map((p, i) => (i === si ? p.map(v => v || avail[ai++] || null) : p)));
+  };
+
+  useEffect(() => {
+    if (phase !== "rendering") return;
+    let cancelled = false;
+    (async () => {
+      await document.fonts.ready;
+      const cache = {};
+      const allItems = [...new Set(plans.flat().filter(Boolean))];
+      const rendered = [];
+      for (const item of allItems) {
+        if (cancelled) return;
+        const fs = ov[item]?.fontSize ?? gfs;
+        const oy = ov[item]?.offsetY  ?? goy;
+        const ox = ov[item]?.offsetX  ?? gox;
+        cache[item] = await renderStripCard(item, fs, oy, ox);
+        rendered.push(item);
+        setCards([...rendered]);
+      }
+      const urls = [];
+      for (const plan of plans) {
+        if (cancelled) return;
+        urls.push(await renderStripSheet(plan, cache, paper));
+        setSheets([...urls]);
+      }
+      if (!cancelled) setPhase("done");
+    })();
+    return () => { cancelled = true; };
+  }, [phase]);
+
+  if (phase === "planning") {
+    const pickerCurrent = openSlot ? plans[openSlot.si][openSlot.slot] : null;
+    const pickerCards = openSlot ? items.filter(n => n === pickerCurrent || !assigned.has(n)) : [];
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.97)", zIndex: 100, display: "flex", flexDirection: "column" }}>
+        {/* Header */}
+        <div style={{ background: "#050c1c", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #0e1c30", flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>📋 Plan Strip Sheets</div>
+            <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>{P.desc} side by side · tap a slot to assign a card</div>
+          </div>
+          <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
+        </div>
+
+        {/* Paper choice */}
+        <div style={{ background: "#050c1c", padding: "0 20px 12px", display: "flex", gap: 8, flexShrink: 0 }}>
+          {Object.entries(STRIP_PAPERS).map(([key, pp]) => (
+            <button key={key} className="mcg-btn" onClick={() => switchPaper(key)}
+              style={{
+                ...BTN, fontSize: 11, padding: "6px 16px", borderRadius: 6, fontWeight: "bold",
+                background: paper === key ? "#c4a35a" : "#0b1727",
+                color:      paper === key ? "#050300" : "#8ca0c8",
+                border: `1px solid ${paper === key ? "#c4a35a" : "#1e3060"}`,
+              }}>
+              {pp.desc}
+            </button>
+          ))}
+        </div>
+
+        {/* Sheet configs */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+          {plans.map((plan, si) => (
+            <div key={si} style={{ background: "#060f1e", borderRadius: 8, border: "1px solid #0e1c30", padding: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <span style={{ fontSize: 12, fontWeight: "bold", color: "#c4a35a" }}>{P.name} Sheet {si + 1}</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="mcg-btn" onClick={() => autoFill(si)}
+                    style={{ ...BTN, fontSize: 10, padding: "3px 10px", color: "#4a8a5a", borderColor: "#1a4a2a" }}>
+                    ⚡ Auto-fill
+                  </button>
+                  {plans.length > 1 && (
+                    <button className="mcg-btn"
+                      onClick={() => setPlans(p => p.filter((_, i) => i !== si))}
+                      style={{ ...BTN, fontSize: 10, padding: "3px 10px", color: "#8a4040", borderColor: "#3a1a1a" }}>
+                      ✕ Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobileW ? "1fr" : "repeat(3, 1fr)", gap: 6 }}>
+                {plan.map((name, slot) => (
+                  <button key={slot} className="mcg-btn"
+                    onClick={() => setOpenSlot({ si, slot })}
+                    style={{
+                      ...BTN, borderRadius: 6, textAlign: "left",
+                      fontFamily: "monospace", fontSize: 12,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      padding: "0 14px", minHeight: 48,
+                      background: name ? "#0d2214" : "#08121e",
+                      color:      name ? "#5daa6e" : "#2a4a6a",
+                      border: `1px solid ${name ? "#3a7a4e" : "#0e1c30"}`,
+                      cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                    }}>
+                    {name
+                      ? <><span style={{ fontSize: 8, color: "#3a7a4e" }}>●</span>{name}</>
+                      : <span style={{ fontSize: 11, color: "#1a3a5a" }}>＋ strip {slot + 1}</span>
+                    }
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <button className="mcg-btn" onClick={() => setPlans(p => [...p, Array(P.slots).fill(null)])}
+            style={{ ...BTN, fontSize: 12, padding: "8px 16px", width: "fit-content", borderColor: "#1a3a5a", color: "#3a6a8a" }}>
+            + Add {P.name} Sheet
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div style={{ background: "#050c1c", borderTop: "1px solid #0e1c30", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ fontSize: 10, color: "#1e3050" }}>
+            {plans.length} sheet{plans.length !== 1 ? "s" : ""} · {assigned.size} of {items.length} assigned
+          </div>
+          <button className="mcg-btn" onClick={() => setPhase("rendering")} disabled={!canRender}
+            style={{
+              ...BTN, fontSize: 13, padding: "8px 20px",
+              background:  canRender ? "#0d2214" : "#060e18",
+              color:       canRender ? "#5daa6e" : "#1e3050",
+              borderColor: canRender ? "#3a7a4e" : "#0e1c30",
+              cursor:      canRender ? "pointer"  : "not-allowed",
+              fontWeight: "bold",
+            }}>
+            ▶ Render {plans.length} Sheet{plans.length !== 1 ? "s" : ""}
+          </button>
+        </div>
+
+        {/* Card picker */}
+        {openSlot && (
+          <>
+            <div onClick={() => setOpenSlot(null)}
+              style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }} />
+            <div style={{
+              position: "fixed", zIndex: 201,
+              ...(isMobileW
+                ? { bottom: 0, left: 0, right: 0, borderRadius: "18px 18px 0 0", maxHeight: "72vh" }
+                : { top: "50%", left: "50%", transform: "translate(-50%,-50%)", borderRadius: 14, width: 340, maxHeight: "80vh" }
+              ),
+              background: "#060f1e", border: "1px solid #0e1c30",
+              display: "flex", flexDirection: "column", overflow: "hidden",
+            }}>
+              <div style={{ padding: "16px 18px 10px", borderBottom: "1px solid #0e1c30", flexShrink: 0 }}>
+                <div style={{ fontSize: 13, color: "#c4a35a", fontWeight: "bold" }}>
+                  Strip {openSlot.slot + 1} — {P.name} Sheet {openSlot.si + 1}
+                </div>
+                <div style={{ fontSize: 10, color: "#2a4060", marginTop: 3 }}>
+                  {pickerCards.length} card{pickerCards.length !== 1 ? "s" : ""} available · tap to assign
+                </div>
+              </div>
+              <div style={{ overflowY: "auto", flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                {pickerCurrent && (
+                  <button className="mcg-btn"
+                    onClick={() => { setSlot(openSlot.si, openSlot.slot, null); setOpenSlot(null); }}
+                    style={{ ...BTN, minHeight: 46, padding: "0 16px", color: "#8a4040", borderColor: "#3a1a1a", borderRadius: 8, textAlign: "left", fontSize: 12 }}>
+                    ✕ Clear slot
+                  </button>
+                )}
+                {pickerCards.length === 0 && (
+                  <div style={{ color: "#1e3050", fontSize: 12, padding: 16, textAlign: "center" }}>All cards already assigned</div>
+                )}
+                {pickerCards.map(name => (
+                  <button key={name} className="mcg-btn"
+                    onClick={() => { setSlot(openSlot.si, openSlot.slot, name); setOpenSlot(null); }}
+                    style={{
+                      ...BTN, minHeight: 52, padding: "0 16px", borderRadius: 8,
+                      textAlign: "left", fontSize: 13, fontFamily: "monospace",
+                      background: name === pickerCurrent ? "#0d2214" : "#0b1727",
+                      color:      name === pickerCurrent ? "#5daa6e" : "#7a9ac0",
+                      borderColor: name === pickerCurrent ? "#3a7a4e" : "#1a3a5a",
+                    }}>
+                    {name === pickerCurrent ? "● " : ""}{name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // rendering / done
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.96)", zIndex: 100, display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <div style={{ background: "#050c1c", padding: "12px 20px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #0e1c30" }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>
+            {phase === "done"
+              ? `✓ ${sheets.length} ${P.name} sheet${sheets.length > 1 ? "s" : ""} ready — ${P.W}×${P.H} px @ 300 DPI`
+              : sheets.length > 0
+              ? `Compositing sheet ${sheets.length + 1} of ${plans.length}…`
+              : `Rendering strips… ${cards.length} / ${totalCards}`}
+          </div>
+          <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>
+            {plans.length} sheet{plans.length !== 1 ? "s" : ""} · {P.desc}
+          </div>
+        </div>
+        <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
+      </div>
+
+      {/* Progress */}
+      {phase !== "done" && (
+        <div style={{ width: "100%", height: 3, background: "#0a1828", flexShrink: 0 }}>
+          <div style={{
+            width: `${(cards.length / Math.max(totalCards, 1)) * 80 + (sheets.length / Math.max(plans.length, 1)) * 20}%`,
+            height: "100%", background: "#c4a35a", transition: "width 0.3s",
+          }} />
+        </div>
+      )}
+
+      {/* Sheet previews */}
+      <div style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexWrap: "wrap", gap: 32, justifyContent: "center", alignContent: "flex-start" }}>
+        {sheets.map((dataUrl, i) => (
+          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ position: "relative" }}>
+              <img src={dataUrl} alt={`${P.name} Sheet ${i + 1}`}
+                style={{
+                  width: paper === "a4" ? 260 : 425,
+                  height: paper === "a4" ? 368 : 300,
+                  objectFit: "cover", borderRadius: 4, display: "block",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+                }} />
+              <div style={{ position: "absolute", bottom: 6, right: 8, background: "rgba(0,0,0,0.6)", color: "#aaa", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>
+                {P.W} × {P.H} px
+              </div>
+            </div>
+            <a href={dataUrl} download={`${paper}-strip-sheet-${i + 1}.jpg`} className="save-link" style={{ width: paper === "a4" ? 260 : 425, marginTop: 6 }}>
+              ⬇ &nbsp;Save — {P.name} Sheet {sheets.length > 1 ? i + 1 : ""}
+            </a>
+          </div>
+        ))}
+        {phase !== "done" && (
+          <div style={{ color: "#1e3050", fontSize: 13, padding: 48, alignSelf: "center" }}>
+            {sheets.length > 0 ? "Compositing sheet…" : "Rendering strips…"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN ─────────────────────────────────────────────
 export default function App() {
   const [raw,       setRaw]      = useState(DEFAULT_ITEMS);
@@ -730,14 +1053,23 @@ export default function App() {
   const coy     = ov[cur]?.offsetY  ?? goy;
   const cox     = ov[cur]?.offsetX  ?? gox;
 
-  // Logical (readable) card size for the chosen template; the strip's art is
-  // a 2550×825 landscape that gets rotated into the 825×2550 file on export
-  const tplW = tpl === "strip" ? STRIP_H : CW;
-  const tplH = tpl === "strip" ? STRIP_W : CH;
-  const tplFontScale = tpl === "strip" ? STRIP_W / CH : 1;
+  const tplW = tpl === "strip" ? STRIP_W : CW;
+  const tplH = tpl === "strip" ? STRIP_H : CH;
+  const tplFontScale = tpl === "strip" ? STRIP_W / CW : 1;
 
   const availW = isMobile ? winW - 48 : winW - 266 - 64;
-  const PREVIEW_SCALE = Math.min(480, Math.max(180, availW)) / tplW;
+  // Card preview fits by width; the tall strip fits by height instead
+  const PREVIEW_SCALE = tpl === "strip"
+    ? 520 / STRIP_H
+    : Math.min(480, Math.max(180, availW)) / CW;
+
+  // Strip background is composed on a canvas once the template image loads
+  const [stripBg, setStripBg] = useState(null);
+  useEffect(() => {
+    const make = () => setStripBg(getStripTemplate().toDataURL("image/jpeg", 0.92));
+    if (templateImage.complete && templateImage.naturalWidth > 0) make();
+    else templateImage.addEventListener("load", make, { once: true });
+  }, []);
 
   const setProp = (prop, val) => {
     if (!cur) return;
@@ -751,8 +1083,9 @@ export default function App() {
       {exporting && (
         <ExportModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} strip={tpl === "strip"} onClose={() => setExporting(false)} />
       )}
-      {a3Exporting && (
-        <A3Modal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
+      {a3Exporting && (tpl === "strip"
+        ? <StripSheetModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
+        : <A3Modal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
       )}
 
             <div className={`mcg-overlay${sidebarOpen && isMobile ? " open" : ""}`}
@@ -794,7 +1127,7 @@ export default function App() {
           </div>
           {tpl === "strip" && (
             <div style={{ fontSize: 9, color: "#3a5070", marginTop: 4, lineHeight: 1.5 }}>
-              Art is rotated 90° inside the 825 × 2550 file — preview shows it readable
+              Tall upright strip — 3 fit on A4, 6 on A3
             </div>
           )}
         </div>
@@ -900,7 +1233,7 @@ export default function App() {
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
           {tpl === "strip" ? (<>
             Exports at <strong style={{color:"#3a5070"}}>825 × 2550 px</strong><br />
-            2.75 × 8.5 inches @ 300 DPI — card rotated 90°
+            2.75 × 8.5 inches @ 300 DPI — upright strip
           </>) : (<>
             Exports at <strong style={{color:"#3a5070"}}>1800 × 1200 px</strong><br />
             6 × 4 inches @ 300 DPI — print-ready
@@ -920,11 +1253,13 @@ export default function App() {
             fontWeight: "bold", letterSpacing: "0.05em",
             cursor: items.length > 0 ? "pointer" : "not-allowed",
           }}>
-          📄 &nbsp;Build A3 Sheet
+          📄 &nbsp;{tpl === "strip" ? "Build A4 / A3 Sheet" : "Build A3 Sheet"}
         </button>
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
           Tap a slot to pick which card goes there<br />
-          Exports at <strong style={{color:"#1e3050"}}>3508 × 4961 px</strong> — A3 @ 300 DPI
+          {tpl === "strip"
+            ? <>Strips side by side — <strong style={{color:"#1e3050"}}>3 per A4 · 6 per A3</strong> @ 300 DPI</>
+            : <>Exports at <strong style={{color:"#1e3050"}}>3508 × 4961 px</strong> — A3 @ 300 DPI</>}
         </div>
       </div>
 
@@ -951,6 +1286,7 @@ export default function App() {
             cardW={tplW}
             cardH={tplH}
             fontScale={tplFontScale}
+            bg={tpl === "strip" && stripBg ? stripBg : TEMPLATE_B64}
           />
 
           <div style={{ fontSize: 9, color: "#1a3a5a", fontFamily: "monospace" }}>
