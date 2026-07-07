@@ -68,14 +68,14 @@ const CW = 1800, CH = 1200;
 const templateImage = new Image();
 templateImage.src = TEMPLATE_B64;
 
-function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides = false }) {
-  const shiftPx  = (offsetY / 100) * CH * scale * 0.35;
-  const shiftXPx = (offsetX / 100) * CW * scale * 0.35;
+function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides = false, cardW = CW, cardH = CH, fontScale = 1 }) {
+  const shiftPx  = (offsetY / 100) * cardH * scale * 0.35;
+  const shiftXPx = (offsetX / 100) * cardW * scale * 0.35;
   const dxPct = Math.round(offsetX * 0.35);
   const dyPct = Math.round(offsetY * 0.35);
   return (
     <div style={{
-      position: "relative", width: CW * scale, height: CH * scale,
+      position: "relative", width: cardW * scale, height: cardH * scale,
       flexShrink: 0, boxShadow: "0 12px 48px rgba(0,0,0,0.55)", overflow: "hidden",
     }}>
       <img src={TEMPLATE_B64} alt="" draggable={false}
@@ -86,7 +86,7 @@ function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides 
       }}>
         <div style={{
           fontFamily: "'Closia','Century Gothic',sans-serif",
-          fontSize: fontSize * scale, fontWeight: 400, color: "#1a1000",
+          fontSize: fontSize * fontScale * scale, fontWeight: 400, color: "#1a1000",
           textAlign: "center", lineHeight: 1.15, letterSpacing: "0.05em",
           textTransform: "uppercase", wordBreak: "break-word", width: "100%",
           transform: `translate(${shiftXPx}px, ${shiftPx}px)`,
@@ -710,7 +710,7 @@ export default function App() {
   const [winW,      setWinW]     = useState(window.innerWidth);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 720);
   const [a3Exporting, setA3Exporting] = useState(false);
-  const [stripExporting, setStripExporting] = useState(false);
+  const [tpl, setTpl] = useState("card"); // "card" = 1800×1200 · "strip" = 825×2550 (rotated)
 
   useEffect(() => {
     const onResize = () => {
@@ -730,8 +730,14 @@ export default function App() {
   const coy     = ov[cur]?.offsetY  ?? goy;
   const cox     = ov[cur]?.offsetX  ?? gox;
 
+  // Logical (readable) card size for the chosen template; the strip's art is
+  // a 2550×825 landscape that gets rotated into the 825×2550 file on export
+  const tplW = tpl === "strip" ? STRIP_H : CW;
+  const tplH = tpl === "strip" ? STRIP_W : CH;
+  const tplFontScale = tpl === "strip" ? STRIP_W / CH : 1;
+
   const availW = isMobile ? winW - 48 : winW - 266 - 64;
-  const PREVIEW_SCALE = Math.min(480, Math.max(180, availW)) / CW;
+  const PREVIEW_SCALE = Math.min(480, Math.max(180, availW)) / tplW;
 
   const setProp = (prop, val) => {
     if (!cur) return;
@@ -743,10 +749,7 @@ export default function App() {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       {exporting && (
-        <ExportModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setExporting(false)} />
-      )}
-      {stripExporting && (
-        <ExportModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} strip onClose={() => setStripExporting(false)} />
+        <ExportModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} strip={tpl === "strip"} onClose={() => setExporting(false)} />
       )}
       {a3Exporting && (
         <A3Modal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
@@ -770,6 +773,30 @@ export default function App() {
             ✦ MENU CARD GENERATOR
           </div>
           <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events</div>
+        </div>
+
+        <div>
+          <div style={LABEL}>Template — output size</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["card", "6×4 Card", "1800 × 1200"], ["strip", "Strip", "825 × 2550"]].map(([key, name, dims]) => (
+              <button key={key} className="mcg-btn" onClick={() => setTpl(key)}
+                style={{
+                  flex: 1, padding: "8px 4px", borderRadius: 6, fontSize: 11,
+                  fontWeight: "bold", lineHeight: 1.5, cursor: "pointer",
+                  background: tpl === key ? "#c4a35a" : "#0b1727",
+                  color: tpl === key ? "#050300" : "#8ca0c8",
+                  border: `1px solid ${tpl === key ? "#c4a35a" : "#1e3060"}`,
+                }}>
+                {name}<br />
+                <span style={{ fontSize: 9, fontWeight: "normal", opacity: 0.85 }}>{dims} px</span>
+              </button>
+            ))}
+          </div>
+          {tpl === "strip" && (
+            <div style={{ fontSize: 9, color: "#3a5070", marginTop: 4, lineHeight: 1.5 }}>
+              Art is rotated 90° inside the 825 × 2550 file — preview shows it readable
+            </div>
+          )}
         </div>
 
         <div>
@@ -868,30 +895,16 @@ export default function App() {
             borderRadius: 8, padding: "13px", fontSize: 13,
             fontWeight: "bold", letterSpacing: "0.05em",
           }}>
-          ⬇ &nbsp;Export Cards ({items.length})
+          ⬇ &nbsp;Export {tpl === "strip" ? "Strips" : "Cards"} ({items.length})
         </button>
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
-          Exports at <strong style={{color:"#3a5070"}}>1800 × 1200 px</strong><br />
-          6 × 4 inches @ 300 DPI — print-ready
-        </div>
-
-        <div style={{ borderTop: "1px solid #0e1c30" }} />
-
-        <button className="mcg-btn"
-          onClick={() => setStripExporting(true)}
-          disabled={items.length === 0}
-          style={{
-            background: "#0b1727", color: items.length > 0 ? "#c4a35a" : "#1e3050",
-            border: `1px solid ${items.length > 0 ? "#c4a35a55" : "#0e1c30"}`,
-            borderRadius: 8, padding: "13px", fontSize: 13,
-            fontWeight: "bold", letterSpacing: "0.05em",
-            cursor: items.length > 0 ? "pointer" : "not-allowed",
-          }}>
-          ⬇ &nbsp;Export Strips ({items.length})
-        </button>
-        <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
-          Exports at <strong style={{color:"#3a5070"}}>825 × 2550 px</strong><br />
-          2.75 × 8.5 inches @ 300 DPI — card rotated 90°
+          {tpl === "strip" ? (<>
+            Exports at <strong style={{color:"#3a5070"}}>825 × 2550 px</strong><br />
+            2.75 × 8.5 inches @ 300 DPI — card rotated 90°
+          </>) : (<>
+            Exports at <strong style={{color:"#3a5070"}}>1800 × 1200 px</strong><br />
+            6 × 4 inches @ 300 DPI — print-ready
+          </>)}
         </div>
 
         <div style={{ borderTop: "1px solid #0e1c30" }} />
@@ -935,10 +948,13 @@ export default function App() {
             offsetX={ov[items[safeIdx]]?.offsetX  ?? gox}
             showGuides={showGuides}
             scale={PREVIEW_SCALE}
+            cardW={tplW}
+            cardH={tplH}
+            fontScale={tplFontScale}
           />
 
           <div style={{ fontSize: 9, color: "#1a3a5a", fontFamily: "monospace" }}>
-            Preview at {Math.round(PREVIEW_SCALE * 100)}% — exports at 1800 × 1200 px
+            Preview at {Math.round(PREVIEW_SCALE * 100)}% — exports at {tpl === "strip" ? "825 × 2550" : "1800 × 1200"} px
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "center", maxWidth: 600 }}>
