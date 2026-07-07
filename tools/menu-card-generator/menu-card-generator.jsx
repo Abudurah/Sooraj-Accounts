@@ -68,15 +68,16 @@ const CW = 1800, CH = 1200;
 const templateImage = new Image();
 templateImage.src = TEMPLATE_B64;
 
-function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides = false, cardW = CW, cardH = CH, fontScale = 1, bg = TEMPLATE_B64 }) {
+function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides = false, cardW = CW, cardH = CH, fontScale = 1, bg = TEMPLATE_B64, rotated = false }) {
   const shiftPx  = (offsetY / 100) * cardH * scale * 0.35;
   const shiftXPx = (offsetX / 100) * cardW * scale * 0.35;
   const dxPct = Math.round(offsetX * 0.35);
   const dyPct = Math.round(offsetY * 0.35);
-  return (
+  const card = (
     <div style={{
-      position: "relative", width: cardW * scale, height: cardH * scale,
+      position: rotated ? "absolute" : "relative", width: cardW * scale, height: cardH * scale,
       flexShrink: 0, boxShadow: "0 12px 48px rgba(0,0,0,0.55)", overflow: "hidden",
+      ...(rotated ? { top: 0, left: 0, transformOrigin: "top left", transform: "rotate(90deg) translateY(-100%)" } : {}),
     }}>
       <img src={bg} alt="" draggable={false}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }} />
@@ -119,6 +120,17 @@ function MenuCard({ text, fontSize, offsetY, offsetX = 0, scale = 1, showGuides 
           {dyPct === 0 ? "V: center" : dyPct > 0 ? `V: +${dyPct}% down` : `V: ${dyPct}% up`}
         </div>
       </>)}
+    </div>
+  );
+  if (!rotated) return card;
+  // Portrait wrapper: the landscape card is rotated 90° inside it, exactly
+  // like the exported strip file
+  return (
+    <div style={{
+      position: "relative", width: cardH * scale, height: cardW * scale,
+      flexShrink: 0, overflow: "hidden",
+    }}>
+      {card}
     </div>
   );
 }
@@ -1062,8 +1074,9 @@ export default function App() {
   const tplFontScale = tpl === "strip" ? STRIP_W / CH : 1;
 
   const availW = isMobile ? winW - 48 : winW - 266 - 64;
+  // Strip preview is the tall 825×2550 file shown as-is, so it fits by height
   const PREVIEW_SCALE = tpl === "strip"
-    ? Math.min(880, Math.max(260, availW)) / STRIP_H
+    ? 520 / STRIP_H
     : Math.min(480, Math.max(180, availW)) / CW;
 
   // Strip background is composed on a canvas once the template image loads
@@ -1108,7 +1121,7 @@ export default function App() {
           <div style={{ fontSize: 11, fontWeight: "bold", color: "#c4a35a", letterSpacing: "0.1em" }}>
             ✦ MENU CARD GENERATOR
           </div>
-          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v5</div>
+          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v6</div>
         </div>
 
         <div>
@@ -1130,7 +1143,7 @@ export default function App() {
           </div>
           {tpl === "strip" && (
             <div style={{ fontSize: 9, color: "#3a5070", marginTop: 4, lineHeight: 1.5 }}>
-              Art rotated 90° inside the 825 × 2550 file — turn the printed strip to read.
+              Shown exactly as the 825 × 2550 file prints — turn the strip sideways to read.
               3 fit on A4, 6 on A3
             </div>
           )}
@@ -1291,6 +1304,7 @@ export default function App() {
             cardH={tplH}
             fontScale={tplFontScale}
             bg={tpl === "strip" && stripBg ? stripBg : TEMPLATE_B64}
+            rotated={tpl === "strip"}
           />
 
           <div style={{ fontSize: 9, color: "#1a3a5a", fontFamily: "monospace" }}>
