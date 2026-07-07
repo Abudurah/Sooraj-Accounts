@@ -195,29 +195,25 @@ function drawCardText(ctx, text, fontSize, offsetY, offsetX, W, H) {
 }
 
 // ── VERTICAL STRIP 825×2550 ──────────────────────────
-// Portrait strip, upright text, no rotation. The 6×4 art can't be stretched
-// to 1:3 without warping the leaves/logo, so the background is rebuilt from
-// four pieces: each half keeps its decorated corners at natural proportions
-// and stretches only its own clean cream band (verified decoration-free in
-// the source art: left half y 440–530, right half y 700–790) to fill the
-// height. The gold frame lines run through both bands, so they stay intact.
+// The strip file is portrait 825×2550, but the artwork inside runs sideways:
+// a landscape 2550×825 version of the card art, rotated 90° into the file.
+// Turn the printed strip to read it. To avoid warping the leaves/logo, the
+// landscape art keeps both decorated ends at natural proportions and
+// stretches only the clean cream middle (source columns 600–1420, verified
+// decoration-free) — the horizontal frame lines pass through unharmed.
 const STRIP_W = 825, STRIP_H = 2550;
 let stripTemplateCache = null;
-function getStripTemplate() {
+function getStripTemplate() { // → landscape 2550×825 canvas
   if (stripTemplateCache) return stripTemplateCache;
   const c = document.createElement("canvas");
-  c.width = STRIP_W; c.height = STRIP_H;
+  c.width = STRIP_H; c.height = STRIP_W;
   const ctx = c.getContext("2d");
-  const s = STRIP_W / CW;
-  const X = 900, DX = Math.round(X * s); // source / dest column split
-  const half = (sx, sw, dx, dw, y1, y2) => { // y1..y2 = clean band to stretch
-    const top = Math.round(y1 * s), bot = Math.round((CH - y2) * s);
-    ctx.drawImage(templateImage, sx, 0,  sw, y1,      dx, 0,             dw, top);
-    ctx.drawImage(templateImage, sx, y1, sw, y2 - y1, dx, top,           dw, STRIP_H - top - bot);
-    ctx.drawImage(templateImage, sx, y2, sw, CH - y2, dx, STRIP_H - bot, dw, bot);
-  };
-  half(0, X, 0, DX, 440, 530);                  // left: leaves + logo below the band
-  half(X, CW - X, DX, STRIP_W - DX, 700, 790);  // right: leaves + fir above the band
+  const s = STRIP_W / CH;           // uniform scale for the decorated ends
+  const XL = 600, XR = 1420;        // clean source band to stretch
+  const lw = Math.round(XL * s), rw = Math.round((CW - XR) * s);
+  ctx.drawImage(templateImage, 0,  0, XL,      CH, 0,            0, lw,                STRIP_W);
+  ctx.drawImage(templateImage, XL, 0, XR - XL, CH, lw,           0, STRIP_H - lw - rw, STRIP_W);
+  ctx.drawImage(templateImage, XR, 0, CW - XR, CH, STRIP_H - rw, 0, rw,                STRIP_W);
   stripTemplateCache = c;
   return c;
 }
@@ -228,11 +224,17 @@ function renderStripCard(text, fontSize, offsetY, offsetX = 0) {
     canvas.width = STRIP_W; canvas.height = STRIP_H;
     const ctx = canvas.getContext("2d");
 
-    const fs = fontSize * (STRIP_W / CW); // same size relative to width as the 6×4 card
+    const LW = STRIP_H, LH = STRIP_W;  // logical landscape card: 2550×825
+    const fs = fontSize * (LH / CH);   // text proportional to card height
 
     const draw = () => {
+      // rotate 90° CW so the logical landscape runs down the portrait strip
+      ctx.save();
+      ctx.translate(STRIP_W, 0);
+      ctx.rotate(Math.PI / 2);
       ctx.drawImage(getStripTemplate(), 0, 0);
-      drawCardText(ctx, text, fs, offsetY, offsetX, STRIP_W, STRIP_H);
+      drawCardText(ctx, text, fs, offsetY, offsetX, LW, LH);
+      ctx.restore();
       resolve(canvas.toDataURL("image/jpeg", 0.97));
     };
 
@@ -1053,14 +1055,15 @@ export default function App() {
   const coy     = ov[cur]?.offsetY  ?? goy;
   const cox     = ov[cur]?.offsetX  ?? gox;
 
-  const tplW = tpl === "strip" ? STRIP_W : CW;
-  const tplH = tpl === "strip" ? STRIP_H : CH;
-  const tplFontScale = tpl === "strip" ? STRIP_W / CW : 1;
+  // Strip preview shows the readable landscape art (2550×825); the export
+  // rotates it into the portrait 825×2550 file
+  const tplW = tpl === "strip" ? STRIP_H : CW;
+  const tplH = tpl === "strip" ? STRIP_W : CH;
+  const tplFontScale = tpl === "strip" ? STRIP_W / CH : 1;
 
   const availW = isMobile ? winW - 48 : winW - 266 - 64;
-  // Card preview fits by width; the tall strip fits by height instead
   const PREVIEW_SCALE = tpl === "strip"
-    ? 520 / STRIP_H
+    ? Math.min(880, Math.max(260, availW)) / STRIP_H
     : Math.min(480, Math.max(180, availW)) / CW;
 
   // Strip background is composed on a canvas once the template image loads
@@ -1105,7 +1108,7 @@ export default function App() {
           <div style={{ fontSize: 11, fontWeight: "bold", color: "#c4a35a", letterSpacing: "0.1em" }}>
             ✦ MENU CARD GENERATOR
           </div>
-          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v4</div>
+          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v5</div>
         </div>
 
         <div>
@@ -1127,7 +1130,8 @@ export default function App() {
           </div>
           {tpl === "strip" && (
             <div style={{ fontSize: 9, color: "#3a5070", marginTop: 4, lineHeight: 1.5 }}>
-              Tall upright strip — 3 fit on A4, 6 on A3
+              Art rotated 90° inside the 825 × 2550 file — turn the printed strip to read.
+              3 fit on A4, 6 on A3
             </div>
           )}
         </div>
@@ -1233,7 +1237,7 @@ export default function App() {
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
           {tpl === "strip" ? (<>
             Exports at <strong style={{color:"#3a5070"}}>825 × 2550 px</strong><br />
-            2.75 × 8.5 inches @ 300 DPI — upright strip
+            2.75 × 8.5 inches @ 300 DPI — art rotated 90°
           </>) : (<>
             Exports at <strong style={{color:"#3a5070"}}>1800 × 1200 px</strong><br />
             6 × 4 inches @ 300 DPI — print-ready
