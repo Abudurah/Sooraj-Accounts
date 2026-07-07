@@ -481,12 +481,12 @@ function A3SheetPlanner({ items, onConfirm, onClose }) {
     </button>
   );
 
-  // Cards available in the picker: unassigned ones + the card already in this slot
+  // All cards stay pickable — the same card may repeat across several slots
   const pickerSlot = openSlot;
   const pickerCurrent = pickerSlot ? getSlotName(pickerSlot.si, pickerSlot.side, pickerSlot.slot) : null;
-  const pickerCards = pickerSlot
-    ? items.filter(n => n === pickerCurrent || !assigned.has(n))
-    : [];
+  const pickerCards = pickerSlot ? items : [];
+  const useCount = {};
+  plans.forEach(p => [...p.left, ...p.right].forEach(n => { if (n) useCount[n] = (useCount[n] || 0) + 1; }));
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.97)", zIndex: 100, display: "flex", flexDirection: "column" }}>
@@ -579,7 +579,7 @@ function A3SheetPlanner({ items, onConfirm, onClose }) {
                 {" — "}Sheet {openSlot.si + 1}
               </div>
               <div style={{ fontSize: 10, color: "#2a4060", marginTop: 3 }}>
-                {pickerCards.length} card{pickerCards.length !== 1 ? "s" : ""} available · tap to assign
+                Tap to assign · the same card can repeat in several slots
               </div>
             </div>
             <div style={{ overflowY: "auto", flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -820,8 +820,11 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
   }, [phase]);
 
   if (phase === "planning") {
+    // All cards stay pickable — the same card may repeat across several slots
     const pickerCurrent = openSlot ? plans[openSlot.si][openSlot.slot] : null;
-    const pickerCards = openSlot ? items.filter(n => n === pickerCurrent || !assigned.has(n)) : [];
+    const pickerCards = openSlot ? items : [];
+    const useCount = {};
+    plans.forEach(p => p.forEach(n => { if (n) useCount[n] = (useCount[n] || 0) + 1; }));
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.97)", zIndex: 100, display: "flex", flexDirection: "column" }}>
         {/* Header */}
@@ -934,7 +937,7 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
                   Strip {openSlot.slot + 1} — {P.name} Sheet {openSlot.si + 1}
                 </div>
                 <div style={{ fontSize: 10, color: "#2a4060", marginTop: 3 }}>
-                  {pickerCards.length} card{pickerCards.length !== 1 ? "s" : ""} available · tap to assign
+                  Tap to assign · the same card can repeat in several slots
                 </div>
               </div>
               <div style={{ overflowY: "auto", flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -946,7 +949,7 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
                   </button>
                 )}
                 {pickerCards.length === 0 && (
-                  <div style={{ color: "#1e3050", fontSize: 12, padding: 16, textAlign: "center" }}>All cards already assigned</div>
+                  <div style={{ color: "#1e3050", fontSize: 12, padding: 16, textAlign: "center" }}>No cards — type dish names first</div>
                 )}
                 {pickerCards.map(name => (
                   <button key={name} className="mcg-btn"
@@ -959,6 +962,7 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
                       borderColor: name === pickerCurrent ? "#3a7a4e" : "#1a3a5a",
                     }}>
                     {name === pickerCurrent ? "● " : ""}{name}
+                    {useCount[name] ? <span style={{ marginLeft: 8, fontSize: 10, color: "#c4a35a" }}>×{useCount[name]}</span> : null}
                   </button>
                 ))}
               </div>
@@ -1114,7 +1118,7 @@ export default function App() {
           <div style={{ fontSize: 11, fontWeight: "bold", color: "#c4a35a", letterSpacing: "0.1em" }}>
             ✦ MENU CARD GENERATOR
           </div>
-          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v8</div>
+          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v9</div>
         </div>
 
         <div>
