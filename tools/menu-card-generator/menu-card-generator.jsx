@@ -1105,7 +1105,7 @@ export default function App() {
           <div style={{ fontSize: 11, fontWeight: "bold", color: "#c4a35a", letterSpacing: "0.1em" }}>
             ✦ MENU CARD GENERATOR
           </div>
-          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events</div>
+          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v4</div>
         </div>
 
         <div>
