@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+  <title>Sooraj Caterers – Accounts</title>
+  <meta name="theme-color" content="#182F24"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Sooraj A/C"/>
+  <link rel="apple-touch-icon" href="/Sooraj-Accounts/assets/icon-DufzHkux.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap"/>
+  <script type="module" crossorigin src="/Sooraj-Accounts/assets/index-B6hpCV5r.js"></script>
+  <link rel="stylesheet" crossorigin href="/Sooraj-Accounts/assets/index-Pnp5924-.css">
+<link rel="manifest" href="/Sooraj-Accounts/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/Sooraj-Accounts/registerSW.js"></script></head>
+<body>
+<div id="root"></div>
+<div id="fallback" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#F0EBE1;gap:10px;padding:24px;text-align:center;font-family:sans-serif;">
+  <div style="font-size:32px">☕</div>
+  <div style="font-size:18px;font-weight:700;color:#182F24">Sooraj Caterers</div>
+  <div id="fallback-msg" style="font-size:13px;color:#7A7060;max-width:280px;line-height:1.6">Loading… (first load may take 10–20 seconds)</div>
+  <button id="fallback-reload" onclick="location.reload(true)" style="display:none;margin-top:8px;padding:10px 24px;border:none;border-radius:9px;background:#182F24;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Reload</button>
+</div>
+<script>
+  var _fb = document.getElementById('fallback');
+  var _msg = document.getElementById('fallback-msg');
+  var _btn = document.getElementById('fallback-reload');
+  var _obs = new MutationObserver(function() {
+    if (document.getElementById('root').children.length > 0) {
+      _fb.style.display = 'none';
+      _obs.disconnect();
+    }
+  });
+  _obs.observe(document.getElementById('root'), { childList: true });
+  setTimeout(function() {
+    if (_fb.style.display !== 'none') {
+      _msg.textContent = 'Taking too long — check your internet connection and try again.';
+      _btn.style.display = 'inline-block';
+    }
+  }, 25000);
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      window.location.reload();
+    });
+  }
+</script>
+</body>
+</html>

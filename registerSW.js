@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/Sooraj-Accounts/sw.js', { scope: '/Sooraj-Accounts/' })})}
