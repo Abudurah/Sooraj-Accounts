@@ -450,15 +450,18 @@ function A3SheetPlanner({ items, onConfirm, onClose }) {
     }));
 
   const autoFill = (si) => {
-    const avail = items.filter(n => !assigned.has(n));
-    let ai = 0;
-    setPlans(prev => prev.map((p, i) => {
-      if (i !== si) return p;
-      const nl = [...p.left], nr = [...p.right];
-      for (let j = 0; j < 4 && ai < avail.length; j++) if (!nl[j]) nl[j] = avail[ai++];
-      for (let j = 0; j < 2 && ai < avail.length; j++) if (!nr[j]) nr[j] = avail[ai++];
-      return { left: nl, right: nr };
-    }));
+    setPlans(prev => {
+      const used = new Set(prev.flatMap(p => [...p.left, ...p.right]).filter(Boolean));
+      const avail = items.filter(n => !used.has(n));
+      let ai = 0;
+      return prev.map((p, i) => {
+        if (i !== si) return p;
+        const nl = [...p.left], nr = [...p.right];
+        for (let j = 0; j < 4 && ai < avail.length; j++) if (!nl[j]) nl[j] = avail[ai++];
+        for (let j = 0; j < 2 && ai < avail.length; j++) if (!nr[j]) nr[j] = avail[ai++];
+        return { left: nl, right: nr };
+      });
+    });
   };
 
   const SlotBtn = ({ name, si, side, slot }) => (
@@ -665,6 +668,18 @@ function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
     ? [...new Set(sheetPlans.flatMap(p => [...p.left, ...p.right]).filter(Boolean))].length
     : 0;
 
+  const downloadZip = async () => {
+    const zip = new JSZip();
+    sheets.forEach((dataUrl, i) => {
+      zip.file(`a3-sheet-${i + 1}.jpg`, dataUrl.split(",")[1], { base64: true });
+    });
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "a3-sheets.zip"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.96)", zIndex: 100, display: "flex", flexDirection: "column" }}>
       {/* Header */}
@@ -681,7 +696,13 @@ function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
             {sheetPlans?.length} A3 sheet{sheetPlans?.length !== 1 ? "s" : ""} · 4 landscape left + 2 portrait right
           </div>
         </div>
-        <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="mcg-btn" onClick={downloadZip} disabled={phase !== "done"}
+            style={{ ...BTN, fontSize: 13, padding: "6px 14px", background: "#c4a35a", color: "#050300", border: "none" }}>
+            ⬇ Download All ZIP
+          </button>
+          <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
+        </div>
       </div>
 
       {/* Progress */}
@@ -786,9 +807,12 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
     setPlans(prev => prev.map((p, i) => (i === si ? p.map((v, j) => (j === slot ? name : v)) : p)));
 
   const autoFill = (si) => {
-    const avail = items.filter(n => !assigned.has(n));
-    let ai = 0;
-    setPlans(prev => prev.map((p, i) => (i === si ? p.map(v => v || avail[ai++] || null) : p)));
+    setPlans(prev => {
+      const used = new Set(prev.flat().filter(Boolean));
+      const avail = items.filter(n => !used.has(n));
+      let ai = 0;
+      return prev.map((p, i) => (i === si ? p.map(v => v || avail[ai++] || null) : p));
+    });
   };
 
   useEffect(() => {
@@ -973,6 +997,18 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
     );
   }
 
+  const downloadZip = async () => {
+    const zip = new JSZip();
+    sheets.forEach((dataUrl, i) => {
+      zip.file(`${paper}-strip-sheet-${i + 1}.jpg`, dataUrl.split(",")[1], { base64: true });
+    });
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${paper}-strip-sheets.zip`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // rendering / done
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.96)", zIndex: 100, display: "flex", flexDirection: "column" }}>
@@ -990,7 +1026,13 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
             {plans.length} sheet{plans.length !== 1 ? "s" : ""} · {P.desc}
           </div>
         </div>
-        <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="mcg-btn" onClick={downloadZip} disabled={phase !== "done"}
+            style={{ ...BTN, fontSize: 13, padding: "6px 14px", background: "#c4a35a", color: "#050300", border: "none" }}>
+            ⬇ Download All ZIP
+          </button>
+          <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
+        </div>
       </div>
 
       {/* Progress */}
@@ -1118,7 +1160,7 @@ export default function App() {
           <div style={{ fontSize: 11, fontWeight: "bold", color: "#c4a35a", letterSpacing: "0.1em" }}>
             ✦ MENU CARD GENERATOR
           </div>
-          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v9</div>
+          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v10</div>
         </div>
 
         <div>
