@@ -206,13 +206,13 @@ function drawCardText(ctx, text, fontSize, offsetY, offsetX, W, H) {
   });
 }
 
-// ── WIDE STRIP 2380×825 ──────────────────────────────
+// ── WIDE STRIP 2000×800 ──────────────────────────────
 // Landscape strip, upright horizontal text, no rotation. To avoid warping
 // the leaves/logo, the art keeps both decorated ends at natural proportions
 // and stretches only the clean cream middle (source columns 600–1420,
 // verified decoration-free) — the horizontal frame lines pass through
-// unharmed. 2380 ≤ A4's 2480 short side, so 4 strips stack per A4 portrait.
-const STRIP_W = 2380, STRIP_H = 825;
+// unharmed. 2000 ≤ A4's 2480 short side, so 4 strips stack per A4 portrait.
+const STRIP_W = 2000, STRIP_H = 800;
 let stripTemplateCache = null;
 function getStripTemplate() {
   if (stripTemplateCache) return stripTemplateCache;
@@ -307,12 +307,12 @@ async function renderA3Sheet(sheetPlan, cardCache) {
 }
 
 // ── EXPORT MODAL ─────────────────────────────────────
-// strip=false → 1800×1200 cards; strip=true → 2550×825 wide strips
+// strip=false → 1800×1200 cards; strip=true → 2000×800 wide strips
 function ExportModal({ items, ov, gfs, goy, gox = 0, strip = false, onClose }) {
   const [cards, setCards] = useState([]);
   const [done,  setDone]  = useState(false);
 
-  const sizeLabel = strip ? "2380 × 825 px" : "1800 × 1200 px";
+  const sizeLabel = strip ? "2000 × 800 px" : "1800 × 1200 px";
 
   useEffect(() => {
     let cancelled = false;
@@ -361,7 +361,7 @@ function ExportModal({ items, ov, gfs, goy, gox = 0, strip = false, onClose }) {
         <div>
           <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>
             {done
-              ? `✓ ${items.length} ${strip ? "strip" : "card"}${items.length > 1 ? "s" : ""} ready — ${strip ? "2380×825 px (7.9×2.75 in @ 300 DPI)" : "1800×1200 px (6×4 in @ 300 DPI)"}`
+              ? `✓ ${items.length} ${strip ? "strip" : "card"}${items.length > 1 ? "s" : ""} ready — ${strip ? "2000×800 px (6.67×2.67 in @ 300 DPI)" : "1800×1200 px (6×4 in @ 300 DPI)"}`
               : `Rendering… ${cards.length} / ${items.length}`}
           </div>
           <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>
@@ -743,8 +743,8 @@ function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
 }
 
 // ── STRIP SHEET MODAL (A4 / A3) ──────────────────────
-// Wide strips stack as rows. A4 portrait fits 4 (4×825 = 3300 ≤ 3508 px tall);
-// A3 landscape fits 8 in two columns of 4 (2×2380 = 4760 ≤ 4961 px wide).
+// Wide strips stack as rows. A4 portrait fits 4 (4×800 = 3200 ≤ 3508 px tall);
+// A3 landscape fits 8 in two columns of 4 (2×2000 = 4000 ≤ 4961 px wide).
 const STRIP_PAPERS = {
   a4: { name: "A4", W: 2480, H: 3508, slots: 4, cols: 1, desc: "A4 portrait — 4 strips" },
   a3: { name: "A3", W: 4961, H: 3508, slots: 8, cols: 2, desc: "A3 landscape — 8 strips" },
@@ -1089,7 +1089,7 @@ export default function App() {
   const [winW,      setWinW]     = useState(window.innerWidth);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 720);
   const [a3Exporting, setA3Exporting] = useState(false);
-  const [tpl, setTpl] = useState("card"); // "card" = 1800×1200 · "strip" = 2550×825 wide
+  const [tpl, setTpl] = useState("card"); // "card" = 1800×1200 · "strip" = 2000×800 wide
 
   useEffect(() => {
     const onResize = () => {
@@ -1160,13 +1160,13 @@ export default function App() {
           <div style={{ fontSize: 11, fontWeight: "bold", color: "#c4a35a", letterSpacing: "0.1em" }}>
             ✦ MENU CARD GENERATOR
           </div>
-          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v10</div>
+          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v11</div>
         </div>
 
         <div>
           <div style={LABEL}>Template — output size</div>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["card", "6×4 Card", "1800 × 1200"], ["strip", "Strip", "2380 × 825"]].map(([key, name, dims]) => (
+            {[["card", "6×4 Card", "1800 × 1200"], ["strip", "Strip", "2000 × 800"]].map(([key, name, dims]) => (
               <button key={key} className="mcg-btn" onClick={() => setTpl(key)}
                 style={{
                   flex: 1, padding: "8px 4px", borderRadius: 6, fontSize: 11,
@@ -1287,8 +1287,8 @@ export default function App() {
         </button>
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
           {tpl === "strip" ? (<>
-            Exports at <strong style={{color:"#3a5070"}}>2380 × 825 px</strong><br />
-            7.9 × 2.75 inches @ 300 DPI — wide strip
+            Exports at <strong style={{color:"#3a5070"}}>2000 × 800 px</strong><br />
+            6.67 × 2.67 inches @ 300 DPI — wide strip
           </>) : (<>
             Exports at <strong style={{color:"#3a5070"}}>1800 × 1200 px</strong><br />
             6 × 4 inches @ 300 DPI — print-ready
@@ -1345,7 +1345,7 @@ export default function App() {
           />
 
           <div style={{ fontSize: 9, color: "#1a3a5a", fontFamily: "monospace" }}>
-            Preview at {Math.round(PREVIEW_SCALE * 100)}% — exports at {tpl === "strip" ? "2380 × 825" : "1800 × 1200"} px
+            Preview at {Math.round(PREVIEW_SCALE * 100)}% — exports at {tpl === "strip" ? "2000 × 800" : "1800 × 1200"} px
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "center", maxWidth: 600 }}>
