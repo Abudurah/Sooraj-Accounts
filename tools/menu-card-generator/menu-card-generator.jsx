@@ -206,13 +206,14 @@ function drawCardText(ctx, text, fontSize, offsetY, offsetX, W, H) {
   });
 }
 
-// ── WIDE STRIP 2000×825 ──────────────────────────────
+// ── WIDE STRIP 1754×826 ──────────────────────────────
 // Landscape strip, upright horizontal text, no rotation. To avoid warping
 // the leaves/logo, the art keeps both decorated ends at natural proportions
 // and stretches only the clean cream middle (source columns 600–1420,
 // verified decoration-free) — the horizontal frame lines pass through
-// unharmed. 2000 ≤ A4's 2480 short side, so 4 strips stack per A4 portrait.
-const STRIP_W = 2000, STRIP_H = 825;
+// unharmed. 1754×826 tiles A4 exactly as 3×2 sideways (3×826 ≤ 2480,
+// 2×1754 = 3508) and A3 as 2×6 upright (2×1754 = 3508, 6×826 ≤ 4961).
+const STRIP_W = 1754, STRIP_H = 826;
 let stripTemplateCache = null;
 function getStripTemplate() {
   if (stripTemplateCache) return stripTemplateCache;
@@ -249,70 +250,90 @@ function renderStripCard(text, fontSize, offsetY, offsetX = 0) {
   });
 }
 
-// ── A3 SHEET COMPOSITOR ──────────────────────────────
-// A3 portrait @ 300 DPI = 3508 × 4961 px
-// Layout: left col = 4 landscape cards, right col = 2 cards rotated 90° CCW (portrait)
-// sheetPlan: { left: [name|null]×4, right: [name|null]×2 }
-// cardCache: { [name]: dataUrl }
-async function renderA3Sheet(sheetPlan, cardCache) {
-  const A3W = 3508, A3H = 4961;
-  const GAP = 20; // ~1.7mm at 300 DPI — gap between cards and from left edge
+// ── SHEET LAYOUTS + COMPOSITOR ───────────────────────
+// Pages @ 300 DPI: A4 portrait = 2480 × 3508, A3 portrait = 3508 × 4961.
+// Each slot is the visual box on the page; rot=true draws the card turned
+// 90° clockwise (text reads top-to-bottom), so the box is the card's h × w.
+const A4 = { W: 2480, H: 3508 }, A3 = { W: 3508, H: 4961 };
+const GAP = 20; // ~1.7mm between 6×4 cards
 
-  // Left: 4 landscape cards at exact render size (CW×CH = 1800×1200)
-  const leftX      = GAP;
-  const leftCardW  = CW;                                     // 1800px exact
-  const leftCardH  = CH;                                     // 1200px exact
-  const leftTotalH = 4 * leftCardH + 3 * GAP;              // 4860px
-  const leftTopY   = Math.floor((A3H - leftTotalH) / 2);   // ~50px
+function gridSlots(cols, rows, w, h, W, H, rot) {
+  const x0 = Math.floor((W - cols * w) / 2), y0 = Math.floor((H - rows * h) / 2);
+  const slots = [];
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) slots.push({ x: x0 + c * w, y: y0 + r * h, w, h, rot });
+  return slots;
+}
 
-  // Right: 2 cards rotated 90° CCW → visual size CH×CW (1200×1800)
-  const rightX      = GAP + CW + 50;                        // 1870px (50px col gap)
-  const rightCardW  = CH;                                    // 1200px visual width
-  const rightCardH  = CW;                                    // 1800px visual height
-  const rightTopY   = GAP;                                   // 20px from top
+const SHEET_PAPERS = {
+  card: {
+    // A4: 2 portrait side by side on top (2×1200 + gap ≤ 2480), 1 landscape below
+    a4: { name: "A4", ...A4, desc: "A4 — 3 cards", slots: (() => {
+      const y0 = Math.floor((A4.H - (CW + GAP + CH)) / 2);
+      const x0 = Math.floor((A4.W - (2 * CH + GAP)) / 2);
+      return [
+        { x: x0,            y: y0,            w: CH, h: CW, rot: true  },
+        { x: x0 + CH + GAP, y: y0,            w: CH, h: CW, rot: true  },
+        { x: Math.floor((A4.W - CW) / 2), y: y0 + CW + GAP, w: CW, h: CH, rot: false },
+      ];
+    })() },
+    // A3: 4 landscape down the left, 2 portrait down the right
+    a3: { name: "A3", ...A3, desc: "A3 — 6 cards", slots: (() => {
+      const leftTopY = Math.floor((A3.H - (4 * CH + 3 * GAP)) / 2);
+      const rightX   = GAP + CW + 50;
+      return [
+        ...[0, 1, 2, 3].map(i => ({ x: GAP, y: leftTopY + i * (CH + GAP), w: CW, h: CH, rot: false })),
+        ...[0, 1].map(i => ({ x: rightX, y: GAP + i * (CW + GAP), w: CH, h: CW, rot: true })),
+      ];
+    })() },
+  },
+  strip: {
+    // Edge-to-edge grids, shared cut lines
+    a4: { name: "A4", ...A4, desc: "A4 — 6 strips", slots: gridSlots(3, 2, STRIP_H, STRIP_W, A4.W, A4.H, true) },
+    a3: { name: "A3", ...A3, desc: "A3 — 12 strips", slots: gridSlots(2, 6, STRIP_W, STRIP_H, A3.W, A3.H, false) },
+  },
+};
 
+// names: [name|null] per slot · cache: { [name]: dataUrl }
+async function renderSheet(names, cache, layout) {
+  const { W, H, slots } = layout;
   const canvas = document.createElement("canvas");
-  canvas.width = A3W; canvas.height = A3H;
+  canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, A3W, A3H);
+  ctx.fillRect(0, 0, W, H);
 
-  const draw = (name, dx, dy, dw, dh, rotated) => new Promise(resolve => {
-    if (!name || !cardCache[name]) { resolve(); return; }
-    const img = new Image();
-    img.onload = () => {
-      if (rotated) {
-        // rotate(+π/2) + translate(dx+dw, dy) → appears 90° CCW; drawImage swaps w/h for 1:1 scale
-        ctx.save();
-        ctx.translate(dx + dw, dy);
-        ctx.rotate(Math.PI / 2);
-        ctx.drawImage(img, 0, 0, dh, dw);
-        ctx.restore();
-      } else {
-        ctx.drawImage(img, dx, dy, dw, dh);
-      }
-      resolve();
-    };
-    img.src = cardCache[name];
-  });
-
-  for (let i = 0; i < 4; i++) {
-    await draw(sheetPlan.left[i], leftX, leftTopY + i * (leftCardH + GAP), leftCardW, leftCardH, false);
+  for (let i = 0; i < slots.length; i++) {
+    const name = names[i], s = slots[i];
+    if (!name || !cache[name]) continue;
+    await new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        if (s.rot) {
+          // rotate(+π/2) about the box's top-right corner; draw at card size h×w
+          ctx.save();
+          ctx.translate(s.x + s.w, s.y);
+          ctx.rotate(Math.PI / 2);
+          ctx.drawImage(img, 0, 0, s.h, s.w);
+          ctx.restore();
+        } else {
+          ctx.drawImage(img, s.x, s.y, s.w, s.h);
+        }
+        resolve();
+      };
+      img.src = cache[name];
+    });
   }
-  for (let i = 0; i < 2; i++) {
-    await draw(sheetPlan.right[i], rightX, rightTopY + i * (rightCardH + GAP), rightCardW, rightCardH, true);
-  }
-
   return canvas.toDataURL("image/jpeg", 0.95);
 }
 
 // ── EXPORT MODAL ─────────────────────────────────────
-// strip=false → 1800×1200 cards; strip=true → 2000×825 wide strips
+// strip=false → 1800×1200 cards; strip=true → 1754×826 wide strips
 function ExportModal({ items, ov, gfs, goy, gox = 0, strip = false, onClose }) {
   const [cards, setCards] = useState([]);
   const [done,  setDone]  = useState(false);
 
-  const sizeLabel = strip ? "2000 × 825 px" : "1800 × 1200 px";
+  const sizeLabel = strip ? `${STRIP_W} × ${STRIP_H} px` : "1800 × 1200 px";
 
   useEffect(() => {
     let cancelled = false;
@@ -361,7 +382,7 @@ function ExportModal({ items, ov, gfs, goy, gox = 0, strip = false, onClose }) {
         <div>
           <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>
             {done
-              ? `✓ ${items.length} ${strip ? "strip" : "card"}${items.length > 1 ? "s" : ""} ready — ${strip ? "2000×825 px (6.67×2.75 in @ 300 DPI)" : "1800×1200 px (6×4 in @ 300 DPI)"}`
+              ? `✓ ${items.length} ${strip ? "strip" : "card"}${items.length > 1 ? "s" : ""} ready — ${strip ? `${STRIP_W}×${STRIP_H} px (5.85×2.75 in @ 300 DPI)` : "1800×1200 px (6×4 in @ 300 DPI)"}`
               : `Rendering… ${cards.length} / ${items.length}`}
           </div>
           <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>
@@ -422,364 +443,15 @@ function ExportModal({ items, ov, gfs, goy, gox = 0, strip = false, onClose }) {
   );
 }
 
-// ── A3 SHEET PLANNER ─────────────────────────────────
-function A3SheetPlanner({ items, onConfirm, onClose }) {
-  const emptySheet = () => ({ left: [null, null, null, null], right: [null, null] });
-  const [plans,    setPlans]    = useState([emptySheet()]);
-  const [openSlot, setOpenSlot] = useState(null); // { si, side, slot }
-  const [isMobileW, setIsMobileW] = useState(window.innerWidth < 600);
+// ── SHEET MODAL (A4 / A3, cards or strips) ───────────
+function SheetModal({ kind, items, ov, gfs, goy, gox = 0, onClose }) {
+  const papers = SHEET_PAPERS[kind];
+  const noun   = kind === "strip" ? "strip" : "card";
+  const renderOne = kind === "strip" ? renderStripCard : renderCard;
 
-  useEffect(() => {
-    const onResize = () => setIsMobileW(window.innerWidth < 600);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  const assigned = new Set(plans.flatMap(p => [...p.left, ...p.right]).filter(Boolean));
-  const canRender = plans.some(p => [...p.left, ...p.right].some(Boolean));
-
-  const getSlotName = (si, side, slot) =>
-    side === "left" ? plans[si].left[slot] : plans[si].right[slot];
-
-  const setSlot = (si, side, slot, name) =>
-    setPlans(prev => prev.map((p, i) => {
-      if (i !== si) return p;
-      const u = { left: [...p.left], right: [...p.right] };
-      if (side === "left") u.left[slot] = name; else u.right[slot] = name;
-      return u;
-    }));
-
-  const autoFill = (si) => {
-    setPlans(prev => {
-      const used = new Set(prev.flatMap(p => [...p.left, ...p.right]).filter(Boolean));
-      const avail = items.filter(n => !used.has(n));
-      let ai = 0;
-      return prev.map((p, i) => {
-        if (i !== si) return p;
-        const nl = [...p.left], nr = [...p.right];
-        for (let j = 0; j < 4 && ai < avail.length; j++) if (!nl[j]) nl[j] = avail[ai++];
-        for (let j = 0; j < 2 && ai < avail.length; j++) if (!nr[j]) nr[j] = avail[ai++];
-        return { left: nl, right: nr };
-      });
-    });
-  };
-
-  const SlotBtn = ({ name, si, side, slot }) => (
-    <button className="mcg-btn"
-      onClick={() => setOpenSlot({ si, side, slot })}
-      style={{
-        ...BTN, borderRadius: 6, textAlign: "left", width: "100%",
-        fontFamily: "monospace", fontSize: 12,
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        padding: "0 14px", minHeight: 48,
-        background: name ? "#0d2214" : "#08121e",
-        color:      name ? "#5daa6e" : "#2a4a6a",
-        border: `1px solid ${name ? "#3a7a4e" : "#0e1c30"}`,
-        cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
-      }}>
-      {name
-        ? <><span style={{ fontSize: 8, color: "#3a7a4e" }}>●</span>{name}</>
-        : <span style={{ fontSize: 11, color: "#1a3a5a" }}>＋ tap to assign</span>
-      }
-    </button>
-  );
-
-  // All cards stay pickable — the same card may repeat across several slots
-  const pickerSlot = openSlot;
-  const pickerCurrent = pickerSlot ? getSlotName(pickerSlot.si, pickerSlot.side, pickerSlot.slot) : null;
-  const pickerCards = pickerSlot ? items : [];
-  const useCount = {};
-  plans.forEach(p => [...p.left, ...p.right].forEach(n => { if (n) useCount[n] = (useCount[n] || 0) + 1; }));
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.97)", zIndex: 100, display: "flex", flexDirection: "column" }}>
-      {/* Header */}
-      <div style={{ background: "#050c1c", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #0e1c30", flexShrink: 0 }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>📋 Plan A3 Sheets</div>
-          <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>Tap a slot to assign a card · Left = landscape · Right = portrait</div>
-        </div>
-        <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
-      </div>
-
-      {/* Sheet configs */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
-        {plans.map((plan, si) => (
-          <div key={si} style={{ background: "#060f1e", borderRadius: 8, border: "1px solid #0e1c30", padding: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: "bold", color: "#c4a35a" }}>A3 Sheet {si + 1}</span>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button className="mcg-btn" onClick={() => autoFill(si)}
-                  style={{ ...BTN, fontSize: 10, padding: "3px 10px", color: "#4a8a5a", borderColor: "#1a4a2a" }}>
-                  ⚡ Auto-fill
-                </button>
-                {plans.length > 1 && (
-                  <button className="mcg-btn"
-                    onClick={() => setPlans(p => p.filter((_, i) => i !== si))}
-                    style={{ ...BTN, fontSize: 10, padding: "3px 10px", color: "#8a4040", borderColor: "#3a1a1a" }}>
-                    ✕ Remove
-                  </button>
-                )}
-              </div>
-            </div>
-            <div style={{ display: "flex", flexDirection: isMobileW ? "column" : "row", gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 9, color: "#2a5070", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Left — landscape (4 slots)</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {plan.left.map((name, slot) => <SlotBtn key={slot} name={name} si={si} side="left" slot={slot} />)}
-                </div>
-              </div>
-              <div style={{ width: isMobileW ? "100%" : 180 }}>
-                <div style={{ fontSize: 9, color: "#2a5070", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Right — portrait (2 slots)</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {plan.right.map((name, slot) => <SlotBtn key={slot} name={name} si={si} side="right" slot={slot} />)}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-        <button className="mcg-btn" onClick={() => setPlans(p => [...p, emptySheet()])}
-          style={{ ...BTN, fontSize: 12, padding: "8px 16px", width: "fit-content", borderColor: "#1a3a5a", color: "#3a6a8a" }}>
-          + Add A3 Sheet
-        </button>
-      </div>
-
-      {/* Footer */}
-      <div style={{ background: "#050c1c", borderTop: "1px solid #0e1c30", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-        <div style={{ fontSize: 10, color: "#1e3050" }}>
-          {plans.length} sheet{plans.length !== 1 ? "s" : ""} · {assigned.size} of {items.length} assigned
-        </div>
-        <button className="mcg-btn" onClick={() => onConfirm(plans)} disabled={!canRender}
-          style={{
-            ...BTN, fontSize: 13, padding: "8px 20px",
-            background:  canRender ? "#0d2214" : "#060e18",
-            color:       canRender ? "#5daa6e" : "#1e3050",
-            borderColor: canRender ? "#3a7a4e" : "#0e1c30",
-            cursor:      canRender ? "pointer"  : "not-allowed",
-            fontWeight: "bold",
-          }}>
-          ▶ Render {plans.length} Sheet{plans.length !== 1 ? "s" : ""}
-        </button>
-      </div>
-
-      {/* Card picker — bottom sheet on mobile, centred modal on desktop */}
-      {openSlot && (
-        <>
-          <div onClick={() => setOpenSlot(null)}
-            style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }} />
-          <div style={{
-            position: "fixed", zIndex: 201,
-            ...(isMobileW
-              ? { bottom: 0, left: 0, right: 0, borderRadius: "18px 18px 0 0", maxHeight: "72vh" }
-              : { top: "50%", left: "50%", transform: "translate(-50%,-50%)", borderRadius: 14, width: 340, maxHeight: "80vh" }
-            ),
-            background: "#060f1e", border: "1px solid #0e1c30",
-            display: "flex", flexDirection: "column", overflow: "hidden",
-          }}>
-            <div style={{ padding: "16px 18px 10px", borderBottom: "1px solid #0e1c30", flexShrink: 0 }}>
-              <div style={{ fontSize: 13, color: "#c4a35a", fontWeight: "bold" }}>
-                {openSlot.side === "left" ? "Landscape" : "Portrait"} slot {openSlot.slot + 1}
-                {" — "}Sheet {openSlot.si + 1}
-              </div>
-              <div style={{ fontSize: 10, color: "#2a4060", marginTop: 3 }}>
-                Tap to assign · the same card can repeat in several slots
-              </div>
-            </div>
-            <div style={{ overflowY: "auto", flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-              {pickerCurrent && (
-                <button className="mcg-btn"
-                  onClick={() => { setSlot(openSlot.si, openSlot.side, openSlot.slot, null); setOpenSlot(null); }}
-                  style={{ ...BTN, minHeight: 46, padding: "0 16px", color: "#8a4040", borderColor: "#3a1a1a", borderRadius: 8, textAlign: "left", fontSize: 12 }}>
-                  ✕ Clear slot
-                </button>
-              )}
-              {pickerCards.length === 0 && (
-                <div style={{ color: "#1e3050", fontSize: 12, padding: 16, textAlign: "center" }}>All cards already assigned</div>
-              )}
-              {pickerCards.map(name => (
-                <button key={name} className="mcg-btn"
-                  onClick={() => { setSlot(openSlot.si, openSlot.side, openSlot.slot, name); setOpenSlot(null); }}
-                  style={{
-                    ...BTN, minHeight: 52, padding: "0 16px", borderRadius: 8,
-                    textAlign: "left", fontSize: 13, fontFamily: "monospace",
-                    background: name === pickerCurrent ? "#0d2214" : "#0b1727",
-                    color:      name === pickerCurrent ? "#5daa6e" : "#7a9ac0",
-                    borderColor: name === pickerCurrent ? "#3a7a4e" : "#1a3a5a",
-                  }}>
-                  {name === pickerCurrent ? "● " : ""}{name}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── A3 SHEET MODAL ───────────────────────────────────
-function A3Modal({ items, ov, gfs, goy, gox = 0, onClose }) {
-  const [phase,      setPhase]      = useState("planning");
-  const [sheetPlans, setSheetPlans] = useState(null);
-  const [cards,      setCards]      = useState([]);
-  const [sheets,     setSheets]     = useState([]);
-
-  useEffect(() => {
-    if (!sheetPlans || phase !== "rendering") return;
-    let cancelled = false;
-    (async () => {
-      await document.fonts.ready;
-      const cache = {};
-      const allItems = [...new Set(sheetPlans.flatMap(p => [...p.left, ...p.right]).filter(Boolean))];
-      const rendered = [];
-      for (const item of allItems) {
-        if (cancelled) return;
-        const fs = ov[item]?.fontSize ?? gfs;
-        const oy = ov[item]?.offsetY  ?? goy;
-        const ox = ov[item]?.offsetX  ?? gox;
-        const dataUrl = await renderCard(item, fs, oy, ox);
-        cache[item] = dataUrl;
-        rendered.push({ name: item, dataUrl });
-        setCards([...rendered]);
-      }
-      if (cancelled) return;
-      const sheetUrls = [];
-      for (const plan of sheetPlans) {
-        if (cancelled) return;
-        const url = await renderA3Sheet(plan, cache);
-        sheetUrls.push(url);
-        setSheets([...sheetUrls]);
-      }
-      if (!cancelled) setPhase("done");
-    })();
-    return () => { cancelled = true; };
-  }, [sheetPlans, phase]);
-
-  const handleConfirm = (plans) => {
-    setSheetPlans(plans);
-    setPhase("rendering");
-  };
-
-  if (phase === "planning") {
-    return <A3SheetPlanner items={items} onConfirm={handleConfirm} onClose={onClose} />;
-  }
-
-  const totalCards = sheetPlans
-    ? [...new Set(sheetPlans.flatMap(p => [...p.left, ...p.right]).filter(Boolean))].length
-    : 0;
-
-  const downloadZip = async () => {
-    const zip = new JSZip();
-    sheets.forEach((dataUrl, i) => {
-      zip.file(`a3-sheet-${i + 1}.jpg`, dataUrl.split(",")[1], { base64: true });
-    });
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "a3-sheets.zip"; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(3,8,18,0.96)", zIndex: 100, display: "flex", flexDirection: "column" }}>
-      {/* Header */}
-      <div style={{ background: "#050c1c", padding: "12px 20px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #0e1c30" }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>
-            {phase === "done"
-              ? `✓ ${sheets.length} A3 sheet${sheets.length > 1 ? "s" : ""} ready — 3508×4961 px (A3 portrait @ 300 DPI)`
-              : sheets.length > 0
-              ? `Compositing sheet ${sheets.length + 1} of ${sheetPlans?.length}…`
-              : `Rendering cards… ${cards.length} / ${totalCards}`}
-          </div>
-          <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>
-            {sheetPlans?.length} A3 sheet{sheetPlans?.length !== 1 ? "s" : ""} · 4 landscape left + 2 portrait right
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="mcg-btn" onClick={downloadZip} disabled={phase !== "done"}
-            style={{ ...BTN, fontSize: 13, padding: "6px 14px", background: "#c4a35a", color: "#050300", border: "none" }}>
-            ⬇ Download All ZIP
-          </button>
-          <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
-        </div>
-      </div>
-
-      {/* Progress */}
-      {phase !== "done" && (
-        <div style={{ width: "100%", height: 3, background: "#0a1828", flexShrink: 0 }}>
-          <div style={{
-            width: `${(cards.length / Math.max(totalCards, 1)) * 80 + (sheets.length / Math.max(sheetPlans?.length || 1, 1)) * 20}%`,
-            height: "100%", background: "#c4a35a", transition: "width 0.3s",
-          }} />
-        </div>
-      )}
-
-      {/* Sheet previews */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexWrap: "wrap", gap: 32, justifyContent: "center", alignContent: "flex-start" }}>
-        {sheets.map((dataUrl, i) => (
-          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div style={{ position: "relative" }}>
-              <img src={dataUrl} alt={`A3 Sheet ${i + 1}`}
-                style={{ width: 300, height: 425, objectFit: "cover", borderRadius: 4, display: "block",
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }} />
-              <div style={{ position: "absolute", bottom: 6, right: 8, background: "rgba(0,0,0,0.6)", color: "#aaa", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>
-                3508 × 4961 px
-              </div>
-            </div>
-            <a href={dataUrl} download={`a3-sheet-${i + 1}.jpg`} className="save-link" style={{ width: 300, marginTop: 6 }}>
-              ⬇ &nbsp;Save — A3 Sheet {sheets.length > 1 ? i + 1 : ""}
-            </a>
-          </div>
-        ))}
-        {phase !== "done" && (
-          <div style={{ color: "#1e3050", fontSize: 13, padding: 48, alignSelf: "center" }}>
-            {sheets.length > 0 ? "Compositing A3 sheet…" : "Rendering menu cards…"}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── STRIP SHEET MODAL (A4 / A3) ──────────────────────
-// Wide strips stack as rows. A4 portrait fits 4 (4×825 = 3300 ≤ 3508 px tall);
-// A3 landscape fits 8 in two columns of 4 (2×2000 = 4000 ≤ 4961 px wide).
-const STRIP_PAPERS = {
-  a4: { name: "A4", W: 2480, H: 3508, slots: 4, cols: 1, desc: "A4 portrait — 4 strips" },
-  a3: { name: "A3", W: 4961, H: 3508, slots: 8, cols: 2, desc: "A3 landscape — 8 strips" },
-};
-
-async function renderStripSheet(names, cache, paper) {
-  const { W, H, slots, cols } = STRIP_PAPERS[paper];
-  const rows = slots / cols;
-  const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, W, H);
-
-  const gapX = Math.floor((W - cols * STRIP_W) / (cols + 1));
-  const gapY = Math.floor((H - rows * STRIP_H) / (rows + 1));
-  for (let i = 0; i < slots; i++) {
-    const name = names[i];
-    if (!name || !cache[name]) continue;
-    const col = Math.floor(i / rows), row = i % rows;
-    const x = gapX + col * (STRIP_W + gapX);
-    const y = gapY + row * (STRIP_H + gapY);
-    await new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => { ctx.drawImage(img, x, y, STRIP_W, STRIP_H); resolve(); };
-      img.src = cache[name];
-    });
-  }
-  return canvas.toDataURL("image/jpeg", 0.95);
-}
-
-function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
   const [paper,     setPaper]     = useState("a4");
   const [phase,     setPhase]     = useState("planning");
-  const [plans,     setPlans]     = useState([Array(STRIP_PAPERS.a4.slots).fill(null)]);
+  const [plans,     setPlans]     = useState([Array(papers.a4.slots.length).fill(null)]);
   const [openSlot,  setOpenSlot]  = useState(null); // { si, slot }
   const [cards,     setCards]     = useState([]);
   const [sheets,    setSheets]    = useState([]);
@@ -791,15 +463,20 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const P         = STRIP_PAPERS[paper];
+  const P         = papers[paper];
   const assigned  = new Set(plans.flat().filter(Boolean));
   const canRender = plans.some(p => p.some(Boolean));
   const totalCards = [...new Set(plans.flat().filter(Boolean))].length;
+  const previewW  = 300, previewH = Math.round(300 * P.H / P.W);
+
+  const slotLabel = (slot) => kind === "strip"
+    ? `strip ${slot + 1}`
+    : `${P.slots[slot].rot ? "portrait" : "landscape"} ${slot + 1}`;
 
   const switchPaper = (p) => {
     if (p === paper) return;
     setPaper(p);
-    setPlans([Array(STRIP_PAPERS[p].slots).fill(null)]);
+    setPlans([Array(papers[p].slots.length).fill(null)]);
     setOpenSlot(null);
   };
 
@@ -828,14 +505,14 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
         const fs = ov[item]?.fontSize ?? gfs;
         const oy = ov[item]?.offsetY  ?? goy;
         const ox = ov[item]?.offsetX  ?? gox;
-        cache[item] = await renderStripCard(item, fs, oy, ox);
+        cache[item] = await renderOne(item, fs, oy, ox);
         rendered.push(item);
         setCards([...rendered]);
       }
       const urls = [];
       for (const plan of plans) {
         if (cancelled) return;
-        urls.push(await renderStripSheet(plan, cache, paper));
+        urls.push(await renderSheet(plan, cache, P));
         setSheets([...urls]);
       }
       if (!cancelled) setPhase("done");
@@ -854,15 +531,15 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
         {/* Header */}
         <div style={{ background: "#050c1c", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #0e1c30", flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>📋 Plan Strip Sheets</div>
-            <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>{P.desc} stacked · tap a slot to assign a card</div>
+            <div style={{ fontSize: 13, fontWeight: "bold", color: "#c4a35a" }}>📋 Plan {kind === "strip" ? "Strip" : "Card"} Sheets</div>
+            <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>{P.desc} · tap a slot to assign a card</div>
           </div>
           <button className="mcg-btn" onClick={onClose} style={{ ...BTN, fontSize: 13, padding: "6px 14px" }}>✕ Close</button>
         </div>
 
         {/* Paper choice */}
         <div style={{ background: "#050c1c", padding: "0 20px 12px", display: "flex", gap: 8, flexShrink: 0 }}>
-          {Object.entries(STRIP_PAPERS).map(([key, pp]) => (
+          {Object.entries(papers).map(([key, pp]) => (
             <button key={key} className="mcg-btn" onClick={() => switchPaper(key)}
               style={{
                 ...BTN, fontSize: 11, padding: "6px 16px", borderRadius: 6, fontWeight: "bold",
@@ -911,14 +588,14 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
                     }}>
                     {name
                       ? <><span style={{ fontSize: 8, color: "#3a7a4e" }}>●</span>{name}</>
-                      : <span style={{ fontSize: 11, color: "#1a3a5a" }}>＋ strip {slot + 1}</span>
+                      : <span style={{ fontSize: 11, color: "#1a3a5a" }}>＋ {slotLabel(slot)}</span>
                     }
                   </button>
                 ))}
               </div>
             </div>
           ))}
-          <button className="mcg-btn" onClick={() => setPlans(p => [...p, Array(P.slots).fill(null)])}
+          <button className="mcg-btn" onClick={() => setPlans(p => [...p, Array(P.slots.length).fill(null)])}
             style={{ ...BTN, fontSize: 12, padding: "8px 16px", width: "fit-content", borderColor: "#1a3a5a", color: "#3a6a8a" }}>
             + Add {P.name} Sheet
           </button>
@@ -957,8 +634,8 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
               display: "flex", flexDirection: "column", overflow: "hidden",
             }}>
               <div style={{ padding: "16px 18px 10px", borderBottom: "1px solid #0e1c30", flexShrink: 0 }}>
-                <div style={{ fontSize: 13, color: "#c4a35a", fontWeight: "bold" }}>
-                  Strip {openSlot.slot + 1} — {P.name} Sheet {openSlot.si + 1}
+                <div style={{ fontSize: 13, color: "#c4a35a", fontWeight: "bold", textTransform: "capitalize" }}>
+                  {slotLabel(openSlot.slot)} — {P.name} Sheet {openSlot.si + 1}
                 </div>
                 <div style={{ fontSize: 10, color: "#2a4060", marginTop: 3 }}>
                   Tap to assign · the same card can repeat in several slots
@@ -997,15 +674,16 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
     );
   }
 
+  const fileBase = `${paper}-${noun}-sheet`;
   const downloadZip = async () => {
     const zip = new JSZip();
     sheets.forEach((dataUrl, i) => {
-      zip.file(`${paper}-strip-sheet-${i + 1}.jpg`, dataUrl.split(",")[1], { base64: true });
+      zip.file(`${fileBase}-${i + 1}.jpg`, dataUrl.split(",")[1], { base64: true });
     });
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `${paper}-strip-sheets.zip`; a.click();
+    a.href = url; a.download = `${fileBase}s.zip`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -1020,7 +698,7 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
               ? `✓ ${sheets.length} ${P.name} sheet${sheets.length > 1 ? "s" : ""} ready — ${P.W}×${P.H} px @ 300 DPI`
               : sheets.length > 0
               ? `Compositing sheet ${sheets.length + 1} of ${plans.length}…`
-              : `Rendering strips… ${cards.length} / ${totalCards}`}
+              : `Rendering ${noun}s… ${cards.length} / ${totalCards}`}
           </div>
           <div style={{ fontSize: 10, color: "#2a4060", marginTop: 2 }}>
             {plans.length} sheet{plans.length !== 1 ? "s" : ""} · {P.desc}
@@ -1052,8 +730,7 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
             <div style={{ position: "relative" }}>
               <img src={dataUrl} alt={`${P.name} Sheet ${i + 1}`}
                 style={{
-                  width: paper === "a4" ? 300 : 425,
-                  height: paper === "a4" ? 425 : 300,
+                  width: previewW, height: previewH,
                   objectFit: "cover", borderRadius: 4, display: "block",
                   boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
                 }} />
@@ -1061,14 +738,14 @@ function StripSheetModal({ items, ov, gfs, goy, gox = 0, onClose }) {
                 {P.W} × {P.H} px
               </div>
             </div>
-            <a href={dataUrl} download={`${paper}-strip-sheet-${i + 1}.jpg`} className="save-link" style={{ width: paper === "a4" ? 300 : 425, marginTop: 6 }}>
+            <a href={dataUrl} download={`${fileBase}-${i + 1}.jpg`} className="save-link" style={{ width: previewW, marginTop: 6 }}>
               ⬇ &nbsp;Save — {P.name} Sheet {sheets.length > 1 ? i + 1 : ""}
             </a>
           </div>
         ))}
         {phase !== "done" && (
           <div style={{ color: "#1e3050", fontSize: 13, padding: 48, alignSelf: "center" }}>
-            {sheets.length > 0 ? "Compositing sheet…" : "Rendering strips…"}
+            {sheets.length > 0 ? "Compositing sheet…" : `Rendering ${noun}s…`}
           </div>
         )}
       </div>
@@ -1089,7 +766,7 @@ export default function App() {
   const [winW,      setWinW]     = useState(window.innerWidth);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 720);
   const [a3Exporting, setA3Exporting] = useState(false);
-  const [tpl, setTpl] = useState("card"); // "card" = 1800×1200 · "strip" = 2000×825 wide
+  const [tpl, setTpl] = useState("card"); // "card" = 1800×1200 · "strip" = 1754×826 wide
 
   useEffect(() => {
     const onResize = () => {
@@ -1138,9 +815,8 @@ export default function App() {
       {exporting && (
         <ExportModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} strip={tpl === "strip"} onClose={() => setExporting(false)} />
       )}
-      {a3Exporting && (tpl === "strip"
-        ? <StripSheetModal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
-        : <A3Modal items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
+      {a3Exporting && (
+        <SheetModal kind={tpl} items={items} ov={ov} gfs={gfs} goy={goy} gox={gox} onClose={() => setA3Exporting(false)} />
       )}
 
             <div className={`mcg-overlay${sidebarOpen && isMobile ? " open" : ""}`}
@@ -1160,13 +836,13 @@ export default function App() {
           <div style={{ fontSize: 11, fontWeight: "bold", color: "#c4a35a", letterSpacing: "0.1em" }}>
             ✦ MENU CARD GENERATOR
           </div>
-          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v11</div>
+          <div style={{ fontSize: 9, color: "#1e3050", marginTop: 2 }}>Sooraj Caterers & Events · v12</div>
         </div>
 
         <div>
           <div style={LABEL}>Template — output size</div>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["card", "6×4 Card", "1800 × 1200"], ["strip", "Strip", "2000 × 825"]].map(([key, name, dims]) => (
+            {[["card", "6×4 Card", "1800 × 1200"], ["strip", "Strip", `${STRIP_W} × ${STRIP_H}`]].map(([key, name, dims]) => (
               <button key={key} className="mcg-btn" onClick={() => setTpl(key)}
                 style={{
                   flex: 1, padding: "8px 4px", borderRadius: 6, fontSize: 11,
@@ -1182,7 +858,7 @@ export default function App() {
           </div>
           {tpl === "strip" && (
             <div style={{ fontSize: 9, color: "#3a5070", marginTop: 4, lineHeight: 1.5 }}>
-              Wide strip, upright text — 4 fit on A4, 8 on A3
+              Wide strip, upright text — 6 fit on A4, 12 on A3
             </div>
           )}
         </div>
@@ -1287,8 +963,8 @@ export default function App() {
         </button>
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
           {tpl === "strip" ? (<>
-            Exports at <strong style={{color:"#3a5070"}}>2000 × 825 px</strong><br />
-            6.67 × 2.75 inches @ 300 DPI — wide strip
+            Exports at <strong style={{color:"#3a5070"}}>{STRIP_W} × {STRIP_H} px</strong><br />
+            5.85 × 2.75 inches @ 300 DPI — wide strip
           </>) : (<>
             Exports at <strong style={{color:"#3a5070"}}>1800 × 1200 px</strong><br />
             6 × 4 inches @ 300 DPI — print-ready
@@ -1308,13 +984,13 @@ export default function App() {
             fontWeight: "bold", letterSpacing: "0.05em",
             cursor: items.length > 0 ? "pointer" : "not-allowed",
           }}>
-          📄 &nbsp;{tpl === "strip" ? "Build A4 / A3 Sheet" : "Build A3 Sheet"}
+          📄 &nbsp;Build A4 / A3 Sheet
         </button>
         <div style={{ fontSize: 10, color: "#1e3050", textAlign: "center", lineHeight: 1.7 }}>
           Tap a slot to pick which card goes there<br />
           {tpl === "strip"
-            ? <>Strips stacked — <strong style={{color:"#1e3050"}}>4 per A4 · 8 per A3</strong> @ 300 DPI</>
-            : <>Exports at <strong style={{color:"#1e3050"}}>3508 × 4961 px</strong> — A3 @ 300 DPI</>}
+            ? <>Strips — <strong style={{color:"#1e3050"}}>6 per A4 · 12 per A3</strong> @ 300 DPI</>
+            : <>Cards — <strong style={{color:"#1e3050"}}>3 per A4 · 6 per A3</strong> @ 300 DPI</>}
         </div>
       </div>
 
@@ -1345,7 +1021,7 @@ export default function App() {
           />
 
           <div style={{ fontSize: 9, color: "#1a3a5a", fontFamily: "monospace" }}>
-            Preview at {Math.round(PREVIEW_SCALE * 100)}% — exports at {tpl === "strip" ? "2000 × 825" : "1800 × 1200"} px
+            Preview at {Math.round(PREVIEW_SCALE * 100)}% — exports at {tpl === "strip" ? `${STRIP_W} × ${STRIP_H}` : "1800 × 1200"} px
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "center", maxWidth: 600 }}>
